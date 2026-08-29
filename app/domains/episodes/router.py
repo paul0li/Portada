@@ -1,0 +1,122 @@
+"""HTTP de episodes."""
+
+from fastapi import APIRouter, Request, Response, status
+from fastapi.responses import FileResponse
+
+from app.core.auth import CurrentUser
+from app.core.deps import Config, Db
+from app.domains.episodes import errors, repo, service
+from app.domains.episodes.schemas import AssemblyOut, CreateEpisode, EpisodeOut, UpdateTitle
+from app.domains.intake import api as intake
+
+router = APIRouter(prefix="/episodes", tags=["episodes"])
+
+CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+def _assembly_out(assembly: repo.Assembly | None) -> AssemblyOut | None:
+    if assembly is None:
+        return None
+    return AssemblyOut(
+        id=assembly.id,
+        template_version=assembly.template_version,
+        finish_applied=assembly.finish_applied,
+        finish_provider=assembly.finish_provider,
+        created_at=assembly.created_at,
+    )
+
+
+def _out(db, episode: repo.Episode) -> EpisodeOut:
+    with db.connection() as conn:
+        assembly = repo.latest_assembly(conn, episode_id=episode.id)
+    return EpisodeOut(
+        id=episode.id,
+        title=episode.title,
+        strength=episode.strength,
+        selection=episode.slots,
+        created_at=episode.created_at,
+        assembly=_assembly_out(assembly),
+    )
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_episode(body: CreateEpisode, db: Db, user_id: CurrentUser) -> EpisodeOut:
+    episode = service.create_episode(
+        db,
+        user_id=user_id,
+        title=body.title,
+        selection=body.normalized_selection(),
+        strength=body.strength,
+    )
+    return _out(db, episode)
+
+
+@router.get("")
+def list_episodes(db: Db, user_id: CurrentUser) -> list[EpisodeOut]:
+    return [_out(db, e) for e in service.list_episodes(db, user_id=user_id)]
+
+
+@router.get("/{episode_id}")
+def get_episode(db: Db, user_id: CurrentUser, episode_id: str) -> EpisodeOut:
+    return _out(db, service.get_episode(db, user_id=user_id, episode_id=episode_id))
+
+
+@router.patch("/{episode_id}")
+def update_title(body: UpdateTitle, db: Db, user_id: CurrentUser, episode_id: str) -> EpisodeOut:
+    episode = service.set_title(db, user_id=user_id, episode_id=episode_id, title=body.title)
+    return _out(db, episode)
+
+
+# `def` y no `async def`: dentro corre Pillow. FastAPI lo manda al threadpool y
+# no bloquea el event loop (ver CLAUDE.md).
+@router.post("/{episode_id}/assembly", status_code=status.HTTP_201_CREATED)
+def build_assembly(
+    request: Request, db: Db, settings: Config, user_id: CurrentUser, episode_id: str
+) -> AssemblyOut:
+    assembly = service.build_assembly(
+        db,
+        settings,
+        request.app.state.finisher,
+        user_id=user_id,
+        episode_id=episode_id,
+    )
+    salida = _assembly_out(assembly)
+    assert salida is not None
+    return salida
+
+
+@router.get("/{episode_id}/assembly/file")
+def get_assembly_file(
+    request: Request,
+    db: Db,
+    settings: Config,
+    user_id: CurrentUser,
+    episode_id: str,
+    variant: str = "final",
+) -> Response:
+    """`variant=final` (publicable) o `variant=base` (sin logo ni título)."""
+    assembly = service.latest_assembly(db, user_id=user_id, episode_id=episode_id)
+    media_id = assembly.base_media_id if variant == "base" else assembly.final_media_id
+
+    media = intake.get(db, media_id)
+    if media is None:
+        raise errors.SinArmado("El archivo de ese armado no está disponible.")
+
+    etag = f'"{media.sha256}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED,
+            headers={"ETag": etag, "Cache-Control": CACHE_CONTROL},
+        )
+
+    return FileResponse(
+        intake.path(settings, media),
+        media_type=media.mime,
+        headers={"ETag": etag, "Cache-Control": CACHE_CONTROL},
+    )
+
+
+@router.delete("/{episode_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_episode(db: Db, user_id: CurrentUser, episode_id: str) -> Response:
+    service.delete_episode(db, user_id=user_id, episode_id=episode_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

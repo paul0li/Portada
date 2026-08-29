@@ -1,0 +1,218 @@
+# Portada — backend
+
+Armado determinista de miniaturas 1280×720 para podcast. El producto y su
+razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
+
+## Outcome actual
+
+**Fase 6 — la grilla del canal pasa (SPEC §15.3).** Seis miniaturas de «El Club
+de las 3 de la Tarde» con fotos reales leen como un mismo canal, también a 320 px
+(el tamaño al que se ven de verdad en un feed). **135 tests.**
+
+El template es **v2** y salió de mirar PNGs, no de leer el SPEC:
+
+| Cambio | Por qué |
+| --- | --- |
+| Rol `marco` nuevo (z=6, sangre completa) | El show usa un PNG 16:9 con el nombre en una banda inferior. No es un logo |
+| Título de y=604 a **y=500** | La banda del marco empieza en y=552 y se comía el título entero |
+| Alturas 680/600 → **560/520** | SPEC §6 asumía fotos de torso. Con un busto real, 680 px de «figura» es una cabeza que tapa al invitado |
+| Acento amarillo → **rojo del marco** `(233,40,39)` | Es el rojo de la marca, muestreado del propio marco |
+| Degradado granate → **neutro frío** | Sobre fondo rojizo el acento rojo no se ve. Ahora el rojo es lo único rojo |
+| Regla 9 px → **14 px** | A 320 px de feed, 9 px son 2 px y el acento desaparece |
+
+**Pendiente:** una foto de Su de torso (la actual es busto) y una tipografía en
+`composition/typefaces/`.
+
+<details><summary>Fases anteriores</summary>
+
+**Fase 5 — el flujo completo funciona por API.** Entrar → subir la librería →
+crear el episodio → armar → descargar. Armar es idempotente por checksum del
+brief; corregir el título produce un armado nuevo sin regenerar nada; una foto
+borrada degrada el armado en vez de romperlo. `finishing` existe con su contrato
+y no hace nada, que es la configuración en la que el producto ya funciona.
+**132 tests en 4 s.**
+
+**Fase 4 — hay una miniatura.** El armado determinístico produce un PNG
+1280×720 en ~170 ms, con los cinco roles de SPEC §6 en sus sitios, título
+auto-ajustado y logo pegado sin deformar. Devuelve **dos** imágenes: la `base`
+sin logo ni título (lo que vería el modelo) y el `final`. 115 tests.
+
+Se prueba sin servidor: `make preview ARGS='carpeta/ "TÍTULO"'`.
+
+**Fase 3 — la librería funciona.** Se entra con magic link, se suben fotos
+etiquetadas con los cinco roles de SPEC §6, se listan, se descargan con `ETag`
+y se borran. La misma imagen subida dos veces ocupa un archivo. El recorte se
+calcula al subir (hoy passthrough). 98 tests en 1,5 s.
+
+**Siguiente: Fase 4 — "tengo un PNG 1280×720 que publicaría"** (dominio
+`composition`). Es la fase que decide si el producto existe (SPEC §15.1), y se
+hace como script, sin HTTP.
+
+| Fase | Outcome | Estado |
+| - | --- | --- |
+| 0 | El servidor arranca y los tests corren | hecho |
+| 1 | Entro a Portada con mi correo | hecho |
+| 2 | Subo una foto y persiste como archivo + fila | hecho |
+| 3 | Mi librería tiene los 5 roles de §6 | hecho |
+| 4 | Tengo un PNG 1280×720 que publicaría (§15.1) | hecho — falta tu juicio con fotos reales |
+| 5 | El flujo completo por API: brief → armado → descarga | hecho |
+| 6 | Seis episodios seguidos parecen el mismo show (§15.3) | hecho con fotos reales |
+
+## Cómo se trabaja aquí
+
+**Outcome-oriented.** Ninguna fase se define por una capa técnica. No existe la
+tarea *"implementar el repo de fotos"*; existe *"subo una foto y la veo en mi
+librería"*. Cada fase declara tres cosas antes de empezar:
+
+- **Outcome** — qué puedes ver o hacer que antes no.
+- **Prueba** — el comando o el archivo que lo demuestra.
+- **Lo que NO construimos** para llegar ahí.
+
+Un slice está listo cuando el outcome es demostrable, no cuando el código parece
+completo.
+
+**Spec-driven.** Criterio en `specs/<dominio>.md` → test en rojo → implementación.
+En ese orden. `tests/test_spec_coverage.py` falla si un criterio no tiene test, y
+también si un test dice cubrir un criterio que no existe.
+
+## Invariantes
+
+Romper una de estas es un bug, no una decisión de diseño.
+
+**Arquitectura** (verificado por `tests/test_domain_boundaries.py`)
+- Un dominio solo importa el `api.py` de otro. Nunca su `repo`, `service` o `router`.
+- La tabla `ALLOWED` de ese test **es** la documentación de dependencias.
+- `core` no importa ningún dominio: es infraestructura, no negocio.
+- Ninguna `FOREIGN KEY` cruza dominios. La integridad entre dominios la garantiza
+  el `api.py`. Es lo que permite mover un dominio a otro proceso sin desarmar el esquema.
+- `composition` no toca la base de datos ni sabe qué es un usuario.
+
+**Producto** (vienen de `SPEC.md`)
+- El armado siempre es salida válida; la IA nunca es una dependencia (§11.4).
+  Por eso `finishing.NoopFinisher` es la implementación por defecto, y es la que
+  corre en todos los tests: el camino sin IA no es un fallback, es el camino normal.
+- El logo y el título nunca pasan por un modelo (§11.5, §11.6).
+- El layout vive en un solo archivo: `composition/template.py` (§6).
+- El `marco` es mobiliario de marca: va en el *overlay* junto al logo y el
+  título, nunca en la base, y por tanto nunca pasa por un modelo.
+- Los tamaños se eligen para **cómo se ve la miniatura** (320 px en un feed), no
+  para cómo se ve el PNG a 1280. Es una regla distinta y da números distintos.
+- Borrar es soft delete: nada destructivo sin revisión (§11.11).
+
+**Bytes que entran**
+- Manda el contenido, nunca lo que dice el cliente. El nombre del archivo, su
+  extensión y su `content-type` son texto que cualquiera escribe: el formato se
+  decide abriendo la imagen y la ruta se deriva del SHA-256. No hay nada que
+  sanitizar porque nada de lo que mandó el cliente participa en una decisión.
+- Los medios se direccionan por contenido (`<sha[:2]>/<sha>.<ext>`): deduplicación
+  gratis, archivos inmutables, y `Cache-Control: immutable` seguro por construcción.
+- Un archivo rechazado no deja basura: el temporal se borra en todos los caminos.
+
+**Datos y rendimiento**
+- Transacciones cortas por contrato. **Nunca** se procesa una imagen dentro de
+  `db.transaction()`. Es la única disciplina que hace que el límite de un escritor
+  de SQLite no se note.
+- Endpoints con Pillow son `def`, **no** `async def`: así FastAPI los manda al
+  threadpool. Envolver Pillow en `async def` bloquea el event loop.
+- Las rutas en disco derivan de ids o de content-hash, **jamás** del nombre que
+  subió el usuario. Eso cierra el path traversal por construcción, no por sanitizar.
+
+**Secretos y logs**
+- Un secreto (magic link, cookie) se guarda siempre como hash SHA-256, nunca en claro.
+  El `id` de una sesión **es** el hash de su cookie: autenticar es un lookup por
+  clave primaria y no existe ninguna columna con el secreto.
+- Pedir un magic link responde igual exista o no la cuenta. El rate limit cuenta
+  intentos, no aciertos: contar solo los que dieron con un usuario real
+  convertiría el contador en un oráculo de qué cuentas existen.
+- El correo se manda **fuera** de la transacción: SMTP puede tardar segundos y
+  una transacción abierta bloquea al único escritor de SQLite.
+- Nunca se loguea: token en claro, cookie, email completo (usar `mask_email`).
+- Un error inesperado se loguea completo del lado servidor y sale como 500 genérico.
+  El cliente nunca ve un traceback, un nombre de tabla ni una ruta del sistema.
+
+## Comandos
+
+```bash
+make install   # uv sync
+make dev       # uvicorn --reload en :8000
+make test      # unit + integration + golden + arquitectura + cobertura de spec
+make lint      # ruff check + format --check
+make fmt       # arregla lo que se pueda
+make migrate   # aplica migraciones sin levantar el servidor
+```
+
+## Decisiones tomadas
+
+| Fecha | Decisión | Por qué | Qué la revertiría |
+| --- | --- | --- | --- |
+| 2026-08-28 | **FastAPI**, no Go | El trabajo real (Pillow, segmentación futura) es Python; en Go habría que llamar a Python igual | Que el backend quede siendo puro I/O — auth y CRUD — sin trabajo de imagen dentro |
+| 2026-08-28 | **Magic link propio**, no better-auth | `better-auth` es TypeScript: usarla obligaba a un segundo runtime en Node para ~150 líneas | Necesitar OAuth con varios proveedores, o SSO |
+| 2026-08-28 | **SQLite** | Un archivo, cero infra, backup = copiar; tests con DB nueva en milisegundos | Que los cutouts en background den `SQLITE_BUSY` seguido. Entonces: Postgres local (su `LISTEN/NOTIFY` además da la cola sin Redis) |
+| 2026-08-28 | **Sin ORM**: `sqlite3` + SQL explícito | Más rápido, sin magia que depurar, y aísla el cambio a Postgres en `repo.py` | Que el esquema crezca a ~25 tablas con relaciones densas |
+| 2026-08-28 | **El backend renderiza** | Una sola implementación del template, testeable a nivel de píxeles | Necesitar el preview en vivo de SPEC §7 — entonces el template se sirve como JSON y ambos lados lo interpretan |
+| 2026-08-28 | **Cutouts fuera del MVP** | rembg son ~180MB y una cola; `processing` nace passthrough y se enchufa después | Que el armado se vea como un collage y eso baste para rechazar SPEC §15.1 |
+| 2026-08-28 | **Fechas como texto ISO-8601 UTC** | Ordenan lexicográficamente, se leen en un log, y evitan los adaptadores de `datetime` obsoletos desde Python 3.12 | Necesitar aritmética de fechas en SQL más allá de comparar |
+| 2026-08-28 | **`TestClient` síncrono**, no httpx async + pytest-asyncio | Una dependencia menos y tests que se leen de arriba a abajo | Tener que testear WebSockets o streaming de verdad |
+| 2026-08-28 | **`core/auth.py` con la dependencia invertida**: `main.py` cuelga el autenticador en `app.state` | Ningún dominio importa `identity`. Un dominio no debe saber *cómo* se autenticó alguien, solo que hay un `UserId` | Nada previsible; es lo que hace barato meter OAuth o una API key para el cliente móvil |
+| 2026-08-28 | **Validación de email por regex propia**, no `EmailStr` | Evita la dependencia `email-validator`, y deja la validación junto a la normalización para que sea la misma por HTTP o por script | Necesitar validación de dominios internacionalizados (IDN) |
+| 2026-08-28 | **Sin `last_seen_at` en las sesiones** | Sería una escritura en *cada* request autenticado contra el único escritor de SQLite: justo el cuello de botella que no queremos construir | Necesitar de verdad “última actividad”. Entonces: escribirlo con granularidad de horas, no de request |
+| 2026-08-28 | **`intake` no conoce `user_id`** | Es lo que permite deduplicar por contenido entre usuarios; de quién es una foto lo sabe `library` | Necesitar borrado real por usuario (GDPR): ahí hay que contar referencias antes de borrar el archivo |
+| 2026-08-28 | **`processing` existe desde el día 1 aunque no recorte nada** | `PassthroughCutout` no es un stub: si la foto ya viene como PNG transparente, el recorte ya está hecho. La costura para rembg existe sin costo | Nada; es la costura barata que evita reescribir `library` y `composition` después |
+| 2026-08-28 | **Un recorte fallido no es un error** | `cutout_or_source` devuelve el original. Es la regla de SPEC §11.4 a nivel de recorte: un recorte roto degrada el resultado, no lo impide | Nada |
+| 2026-08-28 | **El armado devuelve `base` y `final`, no una imagen** | Es la tubería de SPEC §7 hecha estructura: el modelo recibe la `base` sin logo ni título, y `reapply` los vuelve a pegar. Por eso corregir un typo no cuesta una regeneración | Nada; es lo que hace que las reglas §11.5 y §11.6 se cumplan solas |
+| 2026-08-28 | **La tipografía se resuelve en cadena** (repo → sistema → error) | Las fuentes del sistema sirven para trabajar pero no son redistribuibles. Fallar con la fuente de mapa de bits de Pillow sería peor que fallar | Meter una fuente libre en el repo, que es lo que hay que hacer antes de publicar |
+| 2026-08-28 | **Los tests corren con `log_level=DEBUG`** | En `WARNING`, `log.info(...)` ni construye el `LogRecord`, y un `extra` inválido queda dormido hasta producción. Ver la trampa de abajo | Que el ruido de logs estorbe al depurar un test |
+
+## Trampas conocidas
+
+Cosas que ya nos mordieron. Están resueltas en el código; están acá para que no
+vuelvan a morder en la próxima.
+
+- **`executescript` hace COMMIT de la transacción pendiente antes de empezar.**
+  Una transacción abierta por fuera no sobrevive. Por eso el `BEGIN IMMEDIATE` de
+  una migración va **dentro** del script (`core/migrations.py`). Como el DDL de
+  SQLite es transaccional, así una migración a medias no existe.
+- **`ROLLBACK` sobre una transacción ya cerrada lanza, y su error tapa el error
+  real.** De ahí la guarda `if conn.in_transaction` en `db.transaction()`. Un
+  fallo en la limpieza nunca debe enmascarar el fallo que veníamos a propagar.
+- **Los ids son ordenables entre milisegundos, no dentro de uno.** Dos ids creados
+  en el mismo ms tienen sufijo aleatorio y no ordenan entre sí. No sirven como
+  número de secuencia estricto.
+- **`X-Forwarded-For` solo se cree con un proxy delante** (`app.state.trust_proxy`).
+  Sin eso, el rate limit por IP es inútil: el cliente elige su propia identidad.
+- **`extra={"name": ...}` revienta con `KeyError` en ejecución.** `name`, `module`,
+  `filename`, `args`, `process` y compañía son atributos reservados de `LogRecord`;
+  stdlib rechaza pisarlos. No avisa al escribirlo, y con el nivel de log alto el
+  record ni se construye, así que el error **queda dormido hasta producción** —
+  nos tumbó el arranque del servidor con los tests en verde. Dos defensas: los
+  tests corren en DEBUG, y `CORE-13` lo caza estáticamente en todo `app/`.
+- **`Image.verify()` deja el objeto inutilizable.** Hay que abrir la imagen dos
+  veces: una para validar la estructura y otra para leer sus metadatos.
+- **El límite de píxeles se comprueba después del encabezado y antes de decodificar.**
+  Un PNG de un color plano pesa unos KB y puede declarar 40.000 × 40.000: el
+  límite de bytes no protege de una bomba de descompresión.
+- **`executescript` no es el único con reglas raras de transacción**; ver también
+  la trampa de arriba. Regla general: si una sentencia puede tocar la transacción,
+  compruébalo con un test antes de confiar.
+- **`ruff` marca `B008` en `file: UploadFile = File(...)`.** La forma correcta no
+  es silenciar la regla sino usar `Annotated[UploadFile, File()]`, que además es
+  el estilo recomendado por FastAPI.
+- **El `.pyc` guarda el mtime del fuente en SEGUNDOS.** Dos ediciones del mismo
+  tamaño dentro del mismo segundo — un script que cambia un valor, corre los
+  tests y lo revierte — dejan bytecode obsoleto que Python considera válido: el
+  disco dice 48 y el proceso lee 56. `make test` va con
+  `PYTHONDONTWRITEBYTECODE=1`; si algo parece imposible, `find . -name __pycache__
+  -exec rm -rf {} +` antes de dudar de tu código.
+- **Un recorte real trae padding transparente arbitrario.** Una de las fotos venía
+  con 372 px vacíos a la izquierda. Sin recortar al alfa antes de escalar, el slot
+  mide el *lienzo* en vez de la *persona* y la figura sale pequeña y descentrada.
+  `_trim_alpha` lo arregla; `COMPOSITION-18` lo fija.
+- **Un acento del color de la marca puede desaparecer.** El rojo del show sobre un
+  degradado granate, pegado a una banda roja, no se ve. Elegir bien el color no
+  basta: hay que mirar contra qué cae.
+- **Desaturar, oscurecer y aplicar viñeta se multiplican.** Tres efectos suaves
+  dan uno brutal: un fondo de estudio (ya oscuro) quedaba negro con 0.55 × 0.75.
+  Los valores del tratamiento de fondo salen de mirar el PNG, no de razonarlos.
+- **`StarletteDeprecationWarning: install httpx2`** al importar `TestClient`. Es
+  ruido conocido de starlette 1.6 con httpx 0.28; no afecta nada. Se resuelve solo
+  cuando starlette estabilice el soporte de httpx2.
