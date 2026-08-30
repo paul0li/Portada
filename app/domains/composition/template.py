@@ -12,7 +12,13 @@ coincidir con las viejas, y hay un test que falla si se edita sin subirlo.
 from dataclasses import dataclass, field
 from typing import Literal
 
-TEMPLATE_VERSION = 2
+TEMPLATE_VERSION = 3
+# v3 (2026-08-30): Anton entra al repo como tipografia del titulo, y el titulo
+#   pasa a anclarse a la linea base en vez de a la ascendente. Ninguna de las dos
+#   cosas esta en este archivo, pero las dos mueven cada pixel del titulo: sin
+#   subir la version, un episodio ya armado se queda en Impact -- el armado es
+#   idempotente por `brief_checksum`, que incluye esta version -- y el canal
+#   acaba con dos tipografias.
 # v2 (2026-08-28): entra el rol `marco` -- un PNG 16:9 a sangre completa que va
 #   encima de todo y que ya trae el nombre del show en una banda inferior. Eso
 #   obligo a subir el titulo por encima de esa banda. Ver Typography.bottom.

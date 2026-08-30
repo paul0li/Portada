@@ -105,11 +105,16 @@ def draw_title(
     draw = ImageDraw.Draw(canvas)
     font = fonts.load(puesto.size)
 
-    # Alineado abajo (SPEC 6): se calcula el alto total y se sube desde el borde
-    # inferior del bloque, para que el titulo crezca hacia arriba y la regla de
-    # acento quede siempre a la misma altura.
-    alto_total = puesto.line_height * len(puesto.lines)
-    y = typography.bottom - alto_total
+    # Alineado abajo (SPEC 6): el titulo crece hacia arriba desde `bottom`, para
+    # que la regla de acento quede siempre a la misma altura.
+    #
+    # Se ancla a la LINEA BASE (`ls`), no a la ascendente (`la`). La ascendente
+    # es una metrica que cada tipografia elige a su gusto -- Anton la tiene en
+    # 123px donde Impact la tiene en 105 -- asi que anclar a ella hace que
+    # `bottom` signifique una altura distinta segun la fuente, y con Anton la
+    # ultima linea se comia la regla. La linea base es la misma idea en
+    # cualquier tipografia: `bottom` es donde se apoya el titulo.
+    y = typography.bottom - puesto.line_height * (len(puesto.lines) - 1)
 
     for line in puesto.lines:
         draw.text(
@@ -119,7 +124,7 @@ def draw_title(
             fill=palette.title,
             stroke_width=typography.stroke_width,
             stroke_fill=palette.title_stroke,
-            anchor="la",
+            anchor="ls",
         )
         y += puesto.line_height
 

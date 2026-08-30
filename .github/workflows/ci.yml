@@ -1,0 +1,37 @@
+name: CI
+
+# Los tests de guardia de este repo -- fronteras entre dominios, cobertura de
+# spec, huella del template, `extra` de logging, tipografia del repo -- existen
+# para atajar deriva a lo largo de meses. Solo sirven si corren solos.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Ubuntu y no macOS a proposito: es el unico sitio donde COMPOSITION-20 dice
+    # algo. En un Mac hay Impact, asi que una tipografia que falte en el repo se
+    # resuelve al sistema y el fallo no aparece hasta produccion.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Instalar Python y dependencias
+        run: uv sync --locked
+
+      - name: Lint
+        run: make lint
+
+      - name: Tests
+        run: make test
