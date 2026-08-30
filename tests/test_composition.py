@@ -338,7 +338,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "10ff122cc7ddb00f"
+HUELLA_DEL_TEMPLATE = "38317044320c5334"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():
@@ -351,6 +351,13 @@ def test_composition_14_editar_el_template_obliga_a_subir_la_version():
                 template.PALETTE,
                 template.BACKGROUND,
                 template.TITLE_Z,
+                # La tipografia no vive en template.py pero decide cada pixel del
+                # titulo: cambiarla sin subir la version deja el canal con dos
+                # fuentes, porque `brief_checksum` incluye la version y el armado
+                # es idempotente por ese checksum. Es como se colo el cambio a
+                # Anton la primera vez. Va el nombre, no la ruta: la ruta depende
+                # de la maquina.
+                fonts.resolve().name,
             )
         ).encode()
     ).hexdigest()[:16]
