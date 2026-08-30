@@ -26,3 +26,4 @@ con `composition`, guarda con `intake` y pasa por `finishing`.
 - **EPISODES-12** — el episodio de otro usuario devuelve 404.
 - **EPISODES-13** — descargar el armado devuelve el PNG con `ETag` inmutable.
 - **EPISODES-14** — una foto borrada de la librería no rompe un episodio que ya la usó (SPEC §11.11).
+- **EPISODES-15** — un episodio con `marco` lo lleva hasta los píxeles: el armado por HTTP produce lo mismo que el armado por script.

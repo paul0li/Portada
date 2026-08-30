@@ -30,7 +30,7 @@ MAX_TITLE = 140
 # SPEC 6: minimos por rol. El conductor es el unico obligatorio -- sin el no hay
 # miniatura del show, solo una imagen. Todo lo demas es opcional (SPEC 11.8).
 MINIMOS = {"conductor": 1}
-MAXIMOS = {"conductor": 1, "invitado": 1, "fondo": 1, "logo": 1, "objeto": 2}
+MAXIMOS = {"conductor": 1, "invitado": 1, "fondo": 1, "logo": 1, "marco": 1, "objeto": 2}
 
 
 def _normalize_title(title: str) -> str:

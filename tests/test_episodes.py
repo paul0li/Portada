@@ -207,3 +207,51 @@ def test_episodes_14_una_foto_borrada_no_rompe_el_episodio(logged_in, imagen):
     rearmado = logged_in.post(f"/episodes/{episode_id}/assembly")
     assert rearmado.status_code == 201
     assert logged_in.get(f"/episodes/{episode_id}/assembly/file").status_code == 200
+
+
+def test_episodes_15_un_episodio_con_marco_lo_lleva_hasta_los_pixeles(
+    logged_in, imagen, settings, db
+):
+    """SPEC 15.3: la grilla que valida el producto se armo con rutas locales.
+    Este test exige el mismo resultado, pero entrando por HTTP."""
+    from app.domains.composition import api as composition
+    from app.domains.intake import api as intake
+    from app.domains.library import api as library
+
+    fotos = _libreria(logged_in, imagen, "conductor", "invitado")
+    marco = logged_in.post(
+        "/photos",
+        data={"role": "marco"},
+        # Un marco opaco entero: si llego hasta el final, no se ve nada mas.
+        files={"file": ("marco.png", imagen(size=(1280, 720), color=(233, 40, 39)), "image/png")},
+    )
+    assert marco.status_code == 201, marco.text
+    fotos["marco"] = marco.json()["id"]
+
+    episode_id = _crear(logged_in, fotos).json()["id"]
+    assert logged_in.post(f"/episodes/{episode_id}/assembly").status_code == 201
+
+    final = logged_in.get(f"/episodes/{episode_id}/assembly/file")
+    assert final.status_code == 200
+    imagen_final = Image.open(io.BytesIO(final.content))
+    for punto in [(4, 4), (1276, 716), (640, 360)]:
+        assert imagen_final.getpixel(punto) == (233, 40, 39), (
+            f"en {punto} se ve {imagen_final.getpixel(punto)}: el marco no llego al armado"
+        )
+
+    # Y el marco esta en el overlay, no en la base: nunca pasaria por un modelo.
+    base = logged_in.get(f"/episodes/{episode_id}/assembly/file", params={"variant": "base"})
+    assert Image.open(io.BytesIO(base.content)).getpixel((4, 4)) != (233, 40, 39)
+
+    # Lo mismo por script: el armado por HTTP no es otro armado.
+    rutas = {}
+    for role, photo_id in fotos.items():
+        photo = library.get_photo(db, user_id=_mi_id(logged_in), photo_id=photo_id)
+        rutas[role] = [intake.path(settings, library.resolve_media(db, settings, photo))]
+    brief = composition.Brief(title="LA VERDAD SOBRE EL CASO", photos=rutas)
+    por_script = composition.compose(brief)
+    assert final.content == por_script.final, "el armado por HTTP difiere del armado por script"
+
+
+def _mi_id(client) -> str:
+    return client.get("/auth/me").json()["id"]
