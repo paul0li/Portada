@@ -1,2 +1,12 @@
 *.bak
 .DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+data/*
+!data/.gitkeep
+.env
