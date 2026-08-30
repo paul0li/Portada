@@ -33,6 +33,8 @@ y un título, sale un PNG.
 - **COMPOSITION-10** — el título se compone en mayúsculas (SPEC §6).
 - **COMPOSITION-11** — un título largo se achica en vez de desbordarse, y nunca baja del mínimo legible.
 - **COMPOSITION-12** — el corte de línea nunca parte una palabra.
+- **COMPOSITION-19** — el título nunca se pisa con la regla de acento, sea cual sea la tipografía: el bloque se ancla a la línea base, no a la ascendente, que cada fuente elige a su gusto.
+- **COMPOSITION-20** — la tipografía viene del repo, no del sistema: si no, el mismo brief da píxeles distintos en dos máquinas y el armado deja de ser determinista.
 
 ## Identidad del armado
 

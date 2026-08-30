@@ -7,7 +7,7 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 
 **Fase 6 — la grilla del canal pasa (SPEC §15.3).** Seis miniaturas de «El Club
 de las 3 de la Tarde» con fotos reales leen como un mismo canal, también a 320 px
-(el tamaño al que se ven de verdad en un feed). **135 tests.**
+(el tamaño al que se ven de verdad en un feed). **137 tests.**
 
 El template es **v2** y salió de mirar PNGs, no de leer el SPEC:
 
@@ -20,8 +20,11 @@ El template es **v2** y salió de mirar PNGs, no de leer el SPEC:
 | Degradado granate → **neutro frío** | Sobre fondo rojizo el acento rojo no se ve. Ahora el rojo es lo único rojo |
 | Regla 9 px → **14 px** | A 320 px de feed, 9 px son 2 px y el acento desaparece |
 
-**Pendiente:** una foto de Su de torso (la actual es busto) y una tipografía en
-`composition/typefaces/`.
+La tipografía ya vive en el repo (**Anton**, SIL OFL): el armado es determinista
+entre máquinas, no solo dentro de la tuya. Lo verifica `COMPOSITION-20`, y el CI
+corre en Ubuntu justo para que eso signifique algo.
+
+**Pendiente:** una foto de Su de torso (la actual es busto).
 
 <details><summary>Fases anteriores</summary>
 
@@ -160,7 +163,10 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-28 | **`processing` existe desde el día 1 aunque no recorte nada** | `PassthroughCutout` no es un stub: si la foto ya viene como PNG transparente, el recorte ya está hecho. La costura para rembg existe sin costo | Nada; es la costura barata que evita reescribir `library` y `composition` después |
 | 2026-08-28 | **Un recorte fallido no es un error** | `cutout_or_source` devuelve el original. Es la regla de SPEC §11.4 a nivel de recorte: un recorte roto degrada el resultado, no lo impide | Nada |
 | 2026-08-28 | **El armado devuelve `base` y `final`, no una imagen** | Es la tubería de SPEC §7 hecha estructura: el modelo recibe la `base` sin logo ni título, y `reapply` los vuelve a pegar. Por eso corregir un typo no cuesta una regeneración | Nada; es lo que hace que las reglas §11.5 y §11.6 se cumplan solas |
-| 2026-08-28 | **La tipografía se resuelve en cadena** (repo → sistema → error) | Las fuentes del sistema sirven para trabajar pero no son redistribuibles. Fallar con la fuente de mapa de bits de Pillow sería peor que fallar | Meter una fuente libre en el repo, que es lo que hay que hacer antes de publicar |
+| 2026-08-28 | **La tipografía se resuelve en cadena** (repo → sistema → error) | Las fuentes del sistema sirven para trabajar pero no son redistribuibles. Fallar con la fuente de mapa de bits de Pillow sería peor que fallar | Ya no: hay una fuente libre en el repo. La cadena queda como red, no como camino |
+| 2026-08-30 | **Anton en el repo**, no Impact | Impact es de Microsoft: no se puede redistribuir, y en Linux no existe. Anton es su equivalente libre (SIL OFL) | Comprar una licencia de la tipografía real del show |
+| 2026-08-30 | **El título se ancla a la línea base**, no a la ascendente | La ascendente la elige cada tipografía a su gusto; anclar a ella hacía que `bottom=500` significara una altura distinta según la fuente | Nada: la línea base es lo que «se apoya en y=500» quiere decir |
+| 2026-08-30 | **CI en Ubuntu**, no en macOS | Es el único sitio donde `COMPOSITION-20` dice algo: en un Mac hay Impact, así que una fuente que falte se resuelve al sistema y el fallo no sale hasta producción | Que el proyecto deje de desplegarse en Linux |
 | 2026-08-28 | **Los tests corren con `log_level=DEBUG`** | En `WARNING`, `log.info(...)` ni construye el `LogRecord`, y un `extra` inválido queda dormido hasta producción. Ver la trampa de abajo | Que el ruido de logs estorbe al depurar un test |
 
 ## Trampas conocidas
@@ -207,6 +213,19 @@ vuelvan a morder en la próxima.
   con 372 px vacíos a la izquierda. Sin recortar al alfa antes de escalar, el slot
   mide el *lienzo* en vez de la *persona* y la figura sale pequeña y descentrada.
   `_trim_alpha` lo arregla; `COMPOSITION-18` lo fija.
+- **Cambiar de tipografía mueve el título, aunque el tamaño sea el mismo.** Anton
+  tiene la ascendente 18 px más abajo que Impact a 104 px. Con el título anclado
+  a la ascendente (`anchor="la"`), `bottom=500` no significaba «el título termina
+  en y=500» sino «la ascendente de la última línea cae en 500 − line_height», que
+  es otra cosa y la decide la fuente: la última línea se comía la regla de acento.
+  Impact se salvaba por 7 px de casualidad. Ahora se ancla a la línea base
+  (`anchor="ls"`), que es la misma idea en cualquier tipografía.
+- **Un test de píxeles puede comprobar lo contrario de lo que crees.** El primer
+  intento de `COMPOSITION-19` miraba los píxeles de la regla y pasaba con el bug
+  puesto: la regla se dibuja **después** del título, así que lo tapa y sus píxeles
+  siempre son del acento. Lo que delata la invasión es el bloque del título
+  (572 px) siendo más ancho que la regla (200 px): lo que se cuela por fuera no lo
+  tapa nada. Un test de guardia no vale hasta verlo fallar con el bug reintroducido.
 - **Un acento del color de la marca puede desaparecer.** El rojo del show sobre un
   degradado granate, pegado a una banda roja, no se ve. Elegir bien el color no
   basta: hay que mirar contra qué cae.

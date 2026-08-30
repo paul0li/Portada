@@ -12,7 +12,7 @@ import pytest
 from PIL import Image
 
 from app.domains.composition import api as composition
-from app.domains.composition import assembly, template, typography
+from app.domains.composition import assembly, fonts, template, typography
 
 
 @pytest.fixture
@@ -274,6 +274,51 @@ def test_composition_12_el_corte_nunca_parte_una_palabra():
     palabras_originales = texto.split()
     palabras_puestas = " ".join(puesto.lines).split()
     assert palabras_puestas == palabras_originales[: len(palabras_puestas)]
+
+
+def test_composition_19_el_titulo_nunca_se_pisa_con_la_regla(fotos):
+    """El titulo no puede bajar de `rule_y`: ahi empieza la regla de acento.
+
+    Se comprueba difiendo el PNG contra el mismo armado sin titulo, y no
+    mirando los pixeles de la regla, porque la regla se dibuja DESPUES y tapa
+    al titulo: sus pixeles son del acento aunque el titulo este debajo. Lo que
+    delata la invasion es el bloque del titulo (572px) siendo mucho mas ancho
+    que la regla (200px): lo que se cuela por fuera de la regla no lo tapa nada.
+
+    Y se comprueba sobre pixeles, no sobre metricas de la fuente, porque el bug
+    que motivo este test -- anclar a la ascendente en vez de a la linea base --
+    pasaba cualquier test de geometria: la ascendente la elige cada tipografia
+    a su gusto, y Anton la tiene 18px mas abajo que Impact.
+    """
+    tipo = template.TYPOGRAPHY
+    regla_y = tipo.bottom + tipo.rule_gap
+
+    def _en_la_regla(x: int, y: int) -> bool:
+        return (
+            tipo.left <= x <= tipo.left + tipo.rule_width
+            and regla_y <= y <= regla_y + tipo.rule_height
+        )
+
+    for texto in ("NADIE LE CREYO", "LA VERDAD SOBRE EL ASADO", "SE FUE DEL PAIS Y VOLVIO"):
+        con = _abrir(composition.compose(_brief(fotos, title=texto, conductor=1)).final)
+        sin = _abrir(composition.compose(_brief(fotos, title="", conductor=1)).final)
+
+        for y in range(regla_y, template.CANVAS[1]):
+            for x in range(tipo.left, tipo.right):
+                if _en_la_regla(x, y):
+                    continue
+                assert con.getpixel((x, y)) == sin.getpixel((x, y)), (
+                    f"«{texto}»: el pixel ({x}, {y}) cambia al poner el titulo, y "
+                    f"esta por debajo de la regla (y={regla_y}). El titulo la invade."
+                )
+
+
+def test_composition_20_la_tipografia_viene_del_repo():
+    assert fonts.is_bundled(), (
+        f"La tipografia se resolvio a {fonts.resolve()}, que es del sistema.\n"
+        "Mientras no haya una en composition/typefaces/, el mismo brief da "
+        "pixeles distintos en dos maquinas y el armado no es determinista."
+    )
 
 
 # --- identidad del armado ------------------------------------------------
