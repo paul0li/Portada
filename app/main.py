@@ -21,13 +21,14 @@ from app.domains.identity import api as identity_api
 from app.domains.identity import email as identity_email
 from app.domains.library import api as library_api
 from app.domains.processing import api as processing_api
+from app.domains.web import api as web_api
 
 log = get_logger("portada.app")
 
 # Los routers de cada dominio se montan aca a medida que existen.
 # Orden alfabetico, sin logica: si montar dos routers en distinto orden cambia
 # el comportamiento, el problema son las rutas, no el orden.
-ROUTERS = [episodes_api.router, identity_api.router, library_api.router]
+ROUTERS = [episodes_api.router, identity_api.router, library_api.router, web_api.router]
 
 
 @asynccontextmanager
@@ -78,6 +79,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for router in ROUTERS:
         app.include_router(router)
+
+    # Las pantallas se sirven desde el propio proceso: mismo origen, sin CORS
+    # y sin aflojar la cookie. Es la postura que la cookie httponly+lax ya
+    # daba por supuesta.
+    web_api.mount_static(app)
 
     return app
 

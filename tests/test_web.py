@@ -1,0 +1,423 @@
+"""Criterios de `specs/web.md`: las pantallas.
+
+Se prueban con el mismo `TestClient` sincrono que el resto del proyecto. Esa es
+la razon entera de que el frontend sea HTML del servidor: un criterio de pantalla
+es un test que corre en `make test`, en segundos, en el mismo CI. Con una SPA
+esto pediria un navegador, y "criterio -> test en rojo -> implementacion" se
+moriria justo en la capa nueva.
+"""
+
+import io
+import re
+
+OTRO_EMAIL = "otra@ejemplo.cl"
+
+
+def _pedir_enlace(client, email="paula@ejemplo.cl"):
+    return client.post("/entrar", data={"email": email})
+
+
+def _enlace(client) -> str:
+    correo = client.app.state.mailer.sent[-1].text
+    return re.search(r"https?://\S+", correo).group(0)
+
+
+def _entrar(client, email="paula@ejemplo.cl"):
+    """El recorrido real: pedir el enlace, abrirlo, pulsar el boton."""
+    _pedir_enlace(client, email)
+    token = _enlace(client).rsplit("=", 1)[-1]
+    pagina = client.get("/entrar", params={"token": token})
+    assert pagina.status_code == 200, pagina.text[:300]
+    respuesta = client.post("/entrar/verificar", data={"token": token}, follow_redirects=False)
+    assert respuesta.status_code in (302, 303), respuesta.text[:300]
+    return respuesta
+
+
+def _subir(client, imagen, *, role="conductor", nombre="foto.png", mime="image/png", **campos):
+    return client.post(
+        "/libreria/fotos",
+        data={"role": role, **campos},
+        files={"file": (nombre, imagen(), mime)},
+        follow_redirects=False,
+    )
+
+
+# --- entrar --------------------------------------------------------------
+
+
+def test_web_01_sin_sesion_lleva_a_entrar(client):
+    respuesta = client.get("/libreria", follow_redirects=False)
+
+    assert respuesta.status_code in (302, 303), "una pantalla no puede contestar 401 en JSON"
+    assert respuesta.headers["location"].startswith("/entrar")
+    assert "application/json" not in respuesta.headers.get("content-type", "")
+
+
+def test_web_02_pedir_el_enlace_no_revela_si_la_cuenta_existe(client):
+    """Misma respuesta byte a byte, exista o no el usuario (como IDENTITY-02)."""
+    nueva = _pedir_enlace(client, "nadie@ejemplo.cl")
+    existente = _pedir_enlace(client, "nadie@ejemplo.cl")
+
+    assert nueva.status_code == existente.status_code == 200
+    assert nueva.text == existente.text
+
+
+def test_web_03_abrir_el_enlace_y_pulsar_entrar_inicia_sesion(client):
+    respuesta = _entrar(client)
+
+    assert respuesta.headers["location"] == "/"
+    assert client.get("/auth/me").status_code == 200
+    assert client.get("/libreria").status_code == 200
+
+
+def test_web_04_un_enlace_gastado_lo_dice_la_pagina(client):
+    _entrar(client)
+    token = _enlace(client).rsplit("=", 1)[-1]
+
+    # El mismo token otra vez: ya se uso.
+    respuesta = client.post("/entrar/verificar", data={"token": token}, follow_redirects=False)
+
+    assert respuesta.status_code == 200, "un enlace gastado no es una pagina de error crudo"
+    assert "text/html" in respuesta.headers["content-type"]
+    assert "Traceback" not in respuesta.text
+    assert '"error"' not in respuesta.text, "salio el JSON de la API en vez de una pagina"
+    assert "otro enlace" in respuesta.text.lower()
+
+
+# --- la libreria ---------------------------------------------------------
+
+
+def test_web_05_subo_una_foto_y_aparece_en_su_rol(client, imagen):
+    _entrar(client)
+
+    assert _subir(client, imagen, role="marco", label="marco del show").status_code in (302, 303)
+
+    pagina = client.get("/libreria", params={"role": "marco"})
+    assert pagina.status_code == 200
+    assert "marco del show" in pagina.text
+
+
+def test_web_06_la_grilla_muestra_la_foto(client, imagen):
+    _entrar(client)
+    _subir(client, imagen)
+
+    pagina = client.get("/libreria").text
+    urls = re.findall(r'src="(/photos/[^"]+/file)"', pagina)
+    assert urls, "la grilla no enlaza el archivo de ninguna foto"
+
+    archivo = client.get(urls[0])
+    assert archivo.status_code == 200
+    assert archivo.headers["content-type"] == "image/png"
+
+
+def test_web_07_no_veo_la_libreria_de_otra_persona(client, imagen):
+    _entrar(client)
+    _subir(client, imagen, label="mi foto privada")
+    client.post("/auth/logout")
+    _entrar(client, OTRO_EMAIL)
+
+    assert "mi foto privada" not in client.get("/libreria").text
+
+
+def test_web_08_un_archivo_que_no_es_imagen_da_un_error_legible(client, imagen):
+    _entrar(client)
+
+    respuesta = client.post(
+        "/libreria/fotos",
+        data={"role": "conductor"},
+        files={"file": ("notas.txt", b"esto no es una imagen", "text/plain")},
+        follow_redirects=True,
+    )
+
+    assert respuesta.status_code == 200
+    assert "text/html" in respuesta.headers["content-type"]
+    assert "Traceback" not in respuesta.text
+    assert "INTAKE_NOT_AN_IMAGE" not in respuesta.text, "el codigo de error no es para leerlo"
+    assert "imagen" in respuesta.text.lower()
+
+
+def test_web_09_borrar_son_dos_pasos(client, imagen):
+    """SPEC 11.11: nada destructivo sin revision. La grilla no borra."""
+    _entrar(client)
+    _subir(client, imagen)
+    photo_id = client.get("/photos").json()["photos"][0]["id"]
+
+    grilla = client.get("/libreria").text
+    assert f'action="/libreria/fotos/{photo_id}/borrar"' not in grilla, (
+        "la grilla borra de un toque: falta el paso de revision"
+    )
+
+    detalle = client.get(f"/libreria/fotos/{photo_id}")
+    assert detalle.status_code == 200
+    assert f"/libreria/fotos/{photo_id}/borrar" in detalle.text
+
+    borrado = client.post(f"/libreria/fotos/{photo_id}/borrar", follow_redirects=True)
+    assert borrado.status_code == 200
+    assert client.get(f"/photos/{photo_id}").status_code == 404
+
+
+# --- la forma de las paginas ---------------------------------------------
+
+
+def test_web_10_las_paginas_privadas_no_se_cachean(client, imagen):
+    _entrar(client)
+    _subir(client, imagen)
+
+    for ruta in ("/", "/libreria"):
+        respuesta = client.get(ruta)
+        assert respuesta.status_code == 200, ruta
+        assert "no-store" in respuesta.headers.get("cache-control", ""), ruta
+
+
+def test_web_11_ninguna_pagina_filtra_el_token_ni_la_cookie(client):
+    _pedir_enlace(client)
+    token = _enlace(client).rsplit("=", 1)[-1]
+
+    # La pagina del enlace necesita el token para poder postearlo, y va en un
+    # campo del formulario. Lo que no puede es acabar en una URL que se
+    # comparte, ni quedarse pegado despues de canjearlo.
+    client.post("/entrar/verificar", data={"token": token})
+    cookie = client.cookies.get("portada_session")
+    assert cookie
+
+    for ruta in ("/", "/libreria"):
+        cuerpo = client.get(ruta).text
+        assert token not in cuerpo, f"{ruta} filtra el token del enlace"
+        assert cookie not in cuerpo, f"{ruta} filtra la cookie de sesion"
+
+
+def test_web_12_salir_cierra_la_sesion_y_lleva_a_entrar(client, imagen):
+    """`POST /auth/logout` devuelve 204, y un formulario HTML contra un 204 NO
+    navega: la sesión se cerraba y la pantalla se quedaba igual, como si el
+    botón no hiciera nada. Un 204 es correcto para un cliente y es una pantalla
+    congelada para una persona."""
+    _entrar(client)
+
+    respuesta = client.post("/salir", follow_redirects=False)
+
+    assert respuesta.status_code in (302, 303), "el navegador se queda donde estaba"
+    assert respuesta.headers["location"] == "/entrar"
+    assert client.get("/auth/me").status_code == 401, "la sesión sigue viva"
+    assert client.get("/libreria", follow_redirects=False).status_code in (302, 303)
+
+
+# --- la miniatura --------------------------------------------------------
+
+
+def _marco_png():
+    """Un marco DE VERDAD: borde y banda inferior, centro transparente.
+
+    Con un rectangulo opaco -- que es lo que da el fixture `imagen` -- el marco
+    se estira a sangre completa y tapa la miniatura entera: el PNG final sale
+    siendo una mancha de un color, identica pase lo que pase debajo. Cualquier
+    test que compare pixeles estaria comparando nada. Nos paso.
+    """
+    import io
+
+    from PIL import Image, ImageDraw
+
+    lienzo = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+    dibujo = ImageDraw.Draw(lienzo)
+    dibujo.rectangle([0, 0, 1279, 719], outline=(233, 40, 39, 255), width=16)
+    dibujo.rectangle([0, 552, 1279, 719], fill=(233, 40, 39, 255))
+    buffer = io.BytesIO()
+    lienzo.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
+
+def _libreria_completa(client, imagen):
+    """Una libreria con un asset de cada rol, como despues del setup."""
+    ids = {}
+    for role in ("conductor", "invitado", "fondo", "objeto", "logo", "marco"):
+        archivo = _marco_png() if role == "marco" else imagen(color=(len(role) * 30 % 255, 70, 120))
+        respuesta = client.post(
+            "/libreria/fotos",
+            data={"role": role, "label": f"{role} de prueba"},
+            files={"file": (f"{role}.png", archivo)},
+            follow_redirects=False,
+        )
+        assert respuesta.status_code in (302, 303), respuesta.text[:300]
+        ids[role] = client.get("/photos", params={"role": role}).json()["photos"][0]["id"]
+    return ids
+
+
+def _armar(client, seleccion, title="LA VERDAD SOBRE EL CASO", **extra):
+    datos = {"title": title, "strength": "medio", **extra}
+    for role, valores in seleccion.items():
+        datos[role] = valores
+    return client.post("/nueva", data=datos, follow_redirects=False)
+
+
+def test_web_13_el_flujo_entero_deja_un_png_descargable(client, imagen):
+    from PIL import Image
+
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    # Paso 1: la grilla del conductor, con sus fotos.
+    paso1 = client.get("/nueva")
+    assert paso1.status_code == 200
+    assert ids["conductor"] in paso1.text
+
+    creado = _armar(client, {"conductor": ids["conductor"], "invitado": ids["invitado"]})
+    assert creado.status_code in (302, 303), creado.text[:400]
+    destino = creado.headers["location"]
+
+    resultado = client.get(destino)
+    assert resultado.status_code == 200
+    descarga = re.search(r'href="(/episodes/[^"]+/assembly/file)"', resultado.text)
+    assert descarga, "el resultado no ofrece la descarga"
+
+    png = client.get(descarga.group(1))
+    assert png.status_code == 200
+    assert png.headers["content-type"] == "image/png"
+    assert Image.open(io.BytesIO(png.content)).size == (1280, 720)
+
+
+def test_web_14_un_paso_opcional_se_omite(client, imagen):
+    """SPEC 11.8: la ausencia es una entrada valida, no un error."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    creado = _armar(client, {"conductor": ids["conductor"]})
+
+    assert creado.status_code in (302, 303), creado.text[:400]
+    assert client.get(creado.headers["location"]).status_code == 200
+
+
+def test_web_15_sin_conductor_no_se_avanza_y_se_dice_por_que(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    creado = _armar(client, {"invitado": ids["invitado"]})
+
+    assert creado.status_code == 200, "dejo crear un episodio sin conductor"
+    assert "text/html" in creado.headers["content-type"]
+    assert "conductor" in creado.text.lower()
+    assert "EPISODES_CONDUCTOR_REQUIRED" not in creado.text
+
+
+def test_web_16_la_marca_va_puesta_sin_pedirla(client, imagen):
+    """SPEC 8: subir el logo es setup, no trabajo semanal. El flujo lo da puesto,
+    pero lo DICE: una entrada invisible en el checksum seria peor que pedirla."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    ultimo = client.get("/nueva", params={"paso": 5, "conductor": ids["conductor"]})
+    assert ultimo.status_code == 200
+    assert "logo de prueba" in ultimo.text, "el resumen no dice que logo se usa"
+    assert "marco de prueba" in ultimo.text, "el resumen no dice que marco se usa"
+
+    creado = _armar(client, {"conductor": ids["conductor"]})
+    episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+    seleccion = client.get(f"/episodes/{episode_id}").json()["selection"]
+    assert seleccion["logo"] == [ids["logo"]]
+    assert seleccion["marco"] == [ids["marco"]]
+
+
+def test_web_17_el_titulo_llega_al_armado(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    creado = _armar(client, {"conductor": ids["conductor"]}, title="nadie esperaba esta respuesta")
+    episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+
+    assert client.get(f"/episodes/{episode_id}").json()["title"] == "nadie esperaba esta respuesta"
+    # Y sale en mayusculas sobre la miniatura: lo pone `composition`, no la UI.
+    assert "NADIE ESPERABA ESTA RESPUESTA" in client.get(creado.headers["location"]).text
+
+
+def test_web_18_la_intensidad_es_la_unica_perilla(client, imagen):
+    """SPEC 11.3: un modelo devuelve un parametro validado, nunca prosa que se
+    pega en algun sitio. El paso 6 del prototipo -- "instrucciones
+    personalizadas", con presets tipo "colores saturados" -- es justo lo que la
+    regla prohibe. Si algun dia vuelve, este test lo dice."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    limpio = _armar(client, {"conductor": ids["conductor"]})
+    con_instrucciones = _armar(
+        client,
+        {"conductor": ids["conductor"]},
+        instructions="conductor a la izquierda, colores saturados, flecha senalando",
+    )
+
+    def _episodio(respuesta):
+        episode_id = respuesta.headers["location"].rsplit("/", 1)[-1]
+        return (
+            client.get(f"/episodes/{episode_id}").json()["title"],
+            client.get(f"/episodes/{episode_id}/assembly/file").content,
+        )
+
+    titulo_limpio, png_limpio = _episodio(limpio)
+    titulo_sucio, png_sucio = _episodio(con_instrucciones)
+
+    # El titulo es lo primero que cambiaria si el texto libre entrara por algun
+    # sitio, y se comprueba aparte de los pixeles: comparar solo PNG deja pasar
+    # cualquier bug que no llegue a dibujarse.
+    assert titulo_limpio == titulo_sucio, "el texto libre se coló en el título"
+    assert png_limpio == png_sucio, "un texto libre cambió la miniatura"
+
+    ultimo = client.get("/nueva", params={"paso": 5, "conductor": ids["conductor"]}).text
+    for perilla in ("suave", "medio", "fuerte"):
+        assert perilla in ultimo.lower()
+
+
+def test_web_19_volver_atras_conserva_lo_elegido(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    paso3 = client.get(
+        "/nueva",
+        params={"paso": 3, "conductor": ids["conductor"], "invitado": ids["invitado"]},
+    )
+
+    assert paso3.status_code == 200
+    # Volver al paso 1 tiene que llevarse la seleccion consigo.
+    atras = re.search(r'href="(/nueva\?[^"]*paso=2[^"]*)"', paso3.text)
+    assert atras, "no hay forma de volver al paso anterior"
+    assert ids["conductor"] in atras.group(1)
+
+
+def test_web_20_subo_al_invitado_sin_salirme_del_flujo(client, imagen):
+    """SPEC 8 paso 3: el invitado se sube CADA SEMANA. Si para eso hay que salir
+    a la librería, se pierde lo ya elegido y el flujo de seis pasos se convierte
+    en un viaje de ida y vuelta."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    paso = f"/nueva?paso=2&conductor={ids['conductor']}"
+
+    pagina = client.get(paso)
+    assert 'name="volver"' in pagina.text, "el paso no ofrece subir sin salirse"
+
+    subida = client.post(
+        "/libreria/fotos",
+        data={"role": "invitado", "label": "invitada nueva", "volver": paso},
+        files={"file": ("nueva.png", imagen(color=(9, 200, 90)))},
+        follow_redirects=False,
+    )
+
+    assert subida.status_code in (302, 303)
+    assert subida.headers["location"] == paso, "me sacó del flujo"
+    vuelta = client.get(subida.headers["location"])
+    assert "invitada nueva" in vuelta.text
+    assert ids["conductor"] in vuelta.text, "se perdió lo ya elegido"
+
+
+def test_web_21_la_vuelta_despues_de_subir_no_sale_de_portada(client, imagen):
+    """`volver` viene del cliente, así que es una redirección abierta esperando
+    a que alguien la use: basta un enlace a Portada con `volver=https://…`."""
+    _entrar(client)
+
+    for fuera in ("https://ejemplo.cl/robo", "//ejemplo.cl/robo", "http://ejemplo.cl"):
+        subida = client.post(
+            "/libreria/fotos",
+            data={"role": "conductor", "volver": fuera},
+            files={"file": ("f.png", imagen())},
+            follow_redirects=False,
+        )
+        destino = subida.headers["location"]
+        assert destino.startswith("/") and not destino.startswith("//"), (
+            f"redirección abierta con volver={fuera!r} -> {destino!r}"
+        )

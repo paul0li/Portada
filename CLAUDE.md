@@ -5,9 +5,53 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 
 ## Outcome actual
 
-**Fase 6 — la grilla del canal pasa (SPEC §15.3).** Seis miniaturas de «El Club
-de las 3 de la Tarde» con fotos reales leen como un mismo canal, también a 320 px
-(el tamaño al que se ven de verdad en un feed). **137 tests.**
+**Fase 2 del frontend — hago una miniatura y la descargo.** El flujo semanal
+entero desde el teléfono: elijo conductor, invitado, fondo y objetos, escribo el
+título, y sale un PNG 1280×720 descargable. **166 tests.**
+
+El flujo son **cinco** pasos, no los seis del prototipo. Subir el logo y el marco
+es *setup* y SPEC §8 ya lo cuenta como tal («el trabajo recurrente son los pasos
+3–8»): la marca se pone una vez y el flujo la da por puesta, diciéndolo en el
+resumen. Y el sexto paso del prototipo —«instrucciones personalizadas», con
+presets tipo *colores saturados*— no está y no puede estar: es prosa dirigiendo a
+un compositor, que es exactamente lo que SPEC §11.3 prohíbe. `WEB-18` lo vigila.
+
+**El borrador del flujo vive en la URL**, no en el servidor: sin tabla de
+borradores, atrás y recargar funcionan solos, y no hay nada escondido.
+
+<details><summary>Fase 1 — entro con mi correo y gestiono mi librería</summary>
+
+Desde el teléfono: pido el enlace, lo abro, subo una foto a su rol, la veo en la
+grilla, entro a su detalle y la borro. HTML del servidor, cero Node.
+
+El frontend es **Jinja2 + htmx servidos por el propio FastAPI**. La razón no es el
+runtime: es que así un criterio de pantalla (`WEB-01…12`) es un test de
+`TestClient` dentro de `make test`, en los mismos segundos y el mismo CI. Con una
+SPA, probar «entro con mi correo y veo mi librería» pide un navegador — y
+«criterio → test en rojo → implementación» se moriría justo en la capa nueva.
+
+Se arreglaron dos bugs que lo bloqueaban: el marco no entraba por la API
+(fase 0), y **el enlace del correo devolvía 405 al abrirlo** — apuntaba a
+`/auth/verify`, que solo acepta POST. Nadie lo vio porque los tests extraen el
+token y lo postean; ninguno abre el enlace, que es lo único que hace una persona.
+
+</details>
+
+El plan completo está en `/Users/paul0li/.claude/plans/glistening-stargazing-ritchie.md`.
+
+<details><summary>Fase 0 — el marco entra por la API</summary>
+
+La grilla de la fase 6 se armó pasando el marco como ruta local a
+`composition.Brief`, saltándose la API: el resultado que valida el producto no se
+reproducía por HTTP. `002_rol_marco.sql` reconstruye la tabla (SQLite no deja
+alterar un `CHECK`) y `marco` pasa a ser el sexto rol de la librería.
+
+</details>
+
+<details><summary>Fase 6 — la grilla del canal pasa (SPEC §15.3)</summary>
+
+Seis miniaturas de «El Club de las 3 de la Tarde» con fotos reales leen como un
+mismo canal, también a 320 px (el tamaño al que se ven de verdad en un feed).
 
 El template es **v2** y salió de mirar PNGs, no de leer el SPEC:
 
@@ -25,6 +69,8 @@ entre máquinas, no solo dentro de la tuya. Lo verifica `COMPOSITION-20`, y el C
 corre en Ubuntu justo para que eso signifique algo.
 
 **Pendiente:** una foto de Su de torso (la actual es busto).
+
+</details>
 
 <details><summary>Fases anteriores</summary>
 
@@ -97,7 +143,11 @@ Romper una de estas es un bug, no una decisión de diseño.
 - El logo y el título nunca pasan por un modelo (§11.5, §11.6).
 - El layout vive en un solo archivo: `composition/template.py` (§6).
 - El `marco` es mobiliario de marca: va en el *overlay* junto al logo y el
-  título, nunca en la base, y por tanto nunca pasa por un modelo.
+  título, nunca en la base, y por tanto nunca pasa por un modelo. Pero es un
+  asset del show, no un número del template: vive en la librería, como el logo.
+- Todo lo que compone una miniatura entra por la API. Si un resultado solo se
+  reproduce con una ruta local, no es un resultado del producto — es lo que pasó
+  con la grilla de la fase 6 y lo que arregla `EPISODES-15`.
 - Los tamaños se eligen para **cómo se ve la miniatura** (320 px en un feed), no
   para cómo se ve el PNG a 1280. Es una regla distinta y da números distintos.
 - Borrar es soft delete: nada destructivo sin revisión (§11.11).
@@ -166,6 +216,17 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-28 | **La tipografía se resuelve en cadena** (repo → sistema → error) | Las fuentes del sistema sirven para trabajar pero no son redistribuibles. Fallar con la fuente de mapa de bits de Pillow sería peor que fallar | Ya no: hay una fuente libre en el repo. La cadena queda como red, no como camino |
 | 2026-08-30 | **Anton en el repo**, no Impact | Impact es de Microsoft: no se puede redistribuir, y en Linux no existe. Anton es su equivalente libre (SIL OFL) | Comprar una licencia de la tipografía real del show |
 | 2026-08-30 | **El título se ancla a la línea base**, no a la ascendente | La ascendente la elige cada tipografía a su gusto; anclar a ella hacía que `bottom=500` significara una altura distinta según la fuente | Nada: la línea base es lo que «se apoya en y=500» quiere decir |
+| 2026-08-30 | **Jinja2 + htmx servidos por FastAPI**, cero Node | Es la única opción donde el método sobrevive: un criterio de pantalla se prueba con el `TestClient` que ya existe, dentro de `make test`. Con una SPA (Vite o HTML+`fetch`) haría falta un navegador — Playwright, segundo runtime, decenas de segundos — o no probar el frontend | Que el preview necesite estado de cliente que el servidor no puede tener (edición manual, arrastrar, canvas). Entonces: islas de JS, no una SPA |
+| 2026-08-30 | **Mismo origen: el frontend lo sirve el propio proceso** | Sin dev server aparte no hay CORS y la cookie httponly+lax se queda intacta. Un Vite en `:5173` habría costado `CORSMiddleware` con `allow_credentials` en código de producción, existiendo solo para una comodidad de desarrollo (`samesite` no habría hecho falta aflojarlo: el puerto no cuenta para el *site*) | Un cliente móvil nativo o un frontend en otro host. Ahí CORS es real, no una comodidad |
+| 2026-08-30 | **`web` habla su propio dialecto** (formularios y fragmentos), no consume la API JSON | Dos transportes, no dos implementaciones: los dos routers llaman a las mismas funciones de `library.api`. La API JSON queda intacta para el cliente que venga | Que los dos routers diverjan en reglas y no solo en formato. Sería la señal de que la regla se escribió en un router en vez de en el service |
+| 2026-08-30 | **`web` es el único dominio que puede importar `identity`** | Es quien DIBUJA la pantalla de entrar: pedirle que no sepa que existe un magic link es pedirle que dibuje un formulario sin saber de qué es. Lo que protegía la regla —que `library`, `episodes` y compañía no dependan de cómo se autenticó nadie— sigue intacto y verificado | Que `web` empiece a usar `identity` para algo que no sea su pantalla |
+| 2026-08-30 | **Archivo e IBM Plex Mono vendorizadas** (SIL OFL) | El mismo argumento que puso Anton en el repo: una instancia, sin nube. Con Portada abierta desde el teléfono en la LAN, una dependencia de `fonts.googleapis.com` es justo la que no se resuelve | Nada |
+| 2026-08-30 | **El acento de la UI es el rojo del show `#E92827`**, no el `#FF4D2E` del prototipo | Es `template.Palette.accent`, muestreado del marco. La interfaz y la miniatura deben decir el mismo rojo | Que cambie el rojo de la marca: entonces cambian los dos, desde `template.py` |
+| 2026-08-30 | **El borrador del flujo viaja en la URL**, no en una tabla ni en la sesión | Son ids opacos del propio usuario sobre páginas `no-store`. A cambio: atrás y recargar funcionan sin escribir una línea, no hay borradores que caducar, y no hay estado escondido que se desincronice de lo que se ve | Que el borrador crezca más allá de unos ids (recortes por episodio, orden manual). Ahí sí hace falta persistirlo |
+| 2026-08-30 | **El flujo son 5 pasos y la marca no es uno** | SPEC §8 ya cuenta subir el logo como setup, no como trabajo semanal. El prototipo lo metía dentro porque era v1 | Que un show cambie de marco cada semana — pero entonces deja de ser una marca |
+| 2026-08-30 | **Se arma al terminar el flujo, sin pantalla de «Generando»** | Con `NoopFinisher` el armado tarda ~300 ms: una pantalla de espera no tendría nada que enseñar, y el prototipo la llenaba con progreso falso | Que exista la pasada de IA. Ahí sí hay dos momentos y la espera es real |
+| 2026-08-30 | **`marco` es un rol normal de `library`**, no parte del template | El precedente ya estaba tomado: el `logo` también es mobiliario de marca y vive en la librería. Lo que decide dónde va un asset no es si cambia cada semana, es de quién es — Anton está en el repo porque la elegimos nosotros; el marco es el PNG del show. Meterlo en `template.py` sería meter el PNG de un cliente en el código, y dejaría el armado de §15.3 sin reproducir por HTTP | Necesitar varios shows con marcos que gestionemos nosotros. Entonces el marco es del template y el template deja de ser único |
+| 2026-08-30 | **La marca (logo + marco) no se autocompleta en el backend** | Si el backend rellenara la selección, subir un marco nuevo cambiaría en silencio el checksum de episodios que nadie tocó. El «se pone una vez» lo da la UI preseleccionando el último de cada uno, no el esquema | Nada previsible: es lo que mantiene el checksum honesto |
 | 2026-08-30 | **CI en Ubuntu**, no en macOS | Es el único sitio donde `COMPOSITION-20` dice algo: en un Mac hay Impact, así que una fuente que falte se resuelve al sistema y el fallo no sale hasta producción | Que el proyecto deje de desplegarse en Linux |
 | 2026-08-28 | **Los tests corren con `log_level=DEBUG`** | En `WARNING`, `log.info(...)` ni construye el `LogRecord`, y un `extra` inválido queda dormido hasta producción. Ver la trampa de abajo | Que el ruido de logs estorbe al depurar un test |
 
@@ -178,6 +239,18 @@ vuelvan a morder en la próxima.
   Una transacción abierta por fuera no sobrevive. Por eso el `BEGIN IMMEDIATE` de
   una migración va **dentro** del script (`core/migrations.py`). Como el DDL de
   SQLite es transaccional, así una migración a medias no existe.
+- **`PRAGMA foreign_keys = OFF` es inerte dentro de una transacción.** La receta
+  oficial de SQLite para reconstruir una tabla (la única forma de cambiar un
+  `CHECK`) empieza apagando las FK — y aquí ese `PRAGMA` **no hace nada**, porque
+  `core/migrations.py` envuelve cada migración en `BEGIN IMMEDIATE`. No avisa: no
+  es un error, es una sentencia que se ignora. `002_rol_marco.sql` es segura por
+  otro motivo, no por el pragma: ninguna FK apunta a `library_photos` porque
+  ninguna FK cruza dominios. El día que una lo haga, ese script la rompe callado.
+- **Renombrar una tabla no se lleva sus índices de vuelta.** Al reconstruir,
+  el índice vivía en la tabla vieja y se fue con el `DROP`. Hay que recrearlo
+  explícitamente, y comprobarlo: `LIBRARY-17` mira `sqlite_master`, porque un
+  índice que falta no rompe ningún test — solo hace lento lo que se consulta en
+  cada paso del flujo semanal.
 - **`ROLLBACK` sobre una transacción ya cerrada lanza, y su error tapa el error
   real.** De ahí la guarda `if conn.in_transaction` en `db.transaction()`. Un
   fallo en la limpieza nunca debe enmascarar el fallo que veníamos a propagar.
@@ -192,6 +265,19 @@ vuelvan a morder en la próxima.
   record ni se construye, así que el error **queda dormido hasta producción** —
   nos tumbó el arranque del servidor con los tests en verde. Dos defensas: los
   tests corren en DEBUG, y `CORE-13` lo caza estáticamente en todo `app/`.
+- **Un fixture puede tapar justo lo que el test mira.** El marco de los tests de
+  `web` era un rectángulo opaco, y a sangre completa tapaba la miniatura entera:
+  el PNG final salía siendo una mancha de un color, idéntica pasara lo que
+  pasara debajo. `WEB-18` comparaba dos PNG para probar que un texto libre no
+  cambia nada, y comparaba dos manchas iguales — pasaba con el bug puesto. El
+  fixture ahora dibuja un marco de verdad, con el centro transparente. Corolario:
+  cuando un test compara píxeles, hay que comprobar que los píxeles enseñan algo.
+- **Un `204` congela un formulario HTML.** `POST /auth/logout` contesta 204, que
+  es correcto para un cliente; ante un 204 el navegador **no navega**, así que
+  «Salir» cerraba la sesión y dejaba la pantalla igual, como si el botón no
+  hiciera nada. Por eso `web` tiene su propio `/salir` que redirige. Regla
+  general: un endpoint pensado para un cliente no sirve tal cual para un
+  formulario, y la diferencia no la enseña ningún test de la API.
 - **`Image.verify()` deja el objeto inutilizable.** Hay que abrir la imagen dos
   veces: una para validar la estructura y otra para leer sus metadatos.
 - **El límite de píxeles se comprueba después del encabezado y antes de decodificar.**

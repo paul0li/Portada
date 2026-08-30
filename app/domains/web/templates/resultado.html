@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block titulo %}{{ episode.title or "Miniatura" }} · Portada{% endblock %}
+
+{% block cabecera %}
+<header class="cabecera">
+  <a class="volver" href="/">‹ Inicio</a>
+  <p class="mono">1280×720</p>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<img class="miniatura-final" src="/episodes/{{ episode.id }}/assembly/file"
+     alt="{{ episode.title }}" width="1280" height="720">
+
+<div>
+  <p class="rotulo">Título</p>
+  <p class="titulo-episodio">{{ episode.title|upper }}</p>
+</div>
+
+<div class="acciones">
+  <a class="boton" href="/episodes/{{ episode.id }}/assembly/file" download>Descargar</a>
+  <a class="boton secundario" href="{{ editar }}">Editar</a>
+</div>
+
+<div class="tarjeta">
+  <p class="rotulo">Se usó</p>
+  <dl class="resumen">
+    {% for etiqueta, nombre in usadas %}
+      <div><dt>{{ etiqueta }}</dt><dd>{{ nombre }}</dd></div>
+    {% endfor %}
+    <div><dt>Intensidad</dt><dd>{{ episode.strength }}</dd></div>
+    <div><dt>Template</dt><dd>v{{ armado.template_version }}</dd></div>
+  </dl>
+</div>
+{% endblock %}

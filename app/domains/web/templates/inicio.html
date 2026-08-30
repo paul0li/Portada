@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Portada{% endblock %}
+
+{% block cabecera %}
+<header class="cabecera">
+  <div>
+    <p class="rotulo">Programa</p>
+    <h1>El Club de las 3 de la Tarde</h1>
+  </div>
+  <form method="post" action="/salir">
+    <button class="salir" type="submit" title="Cerrar sesión">Salir</button>
+  </form>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<a class="tarjeta enlace-tarjeta" href="/libreria">
+  <div class="entre">
+    <p class="rotulo">Librería</p>
+    <span class="chevron" aria-hidden="true">›</span>
+  </div>
+  <div class="stats">
+    {% for role in roles %}
+      <div class="stat">
+        <b>{{ stats.get(role, 0) }}</b>
+        <span>{{ etiquetas[role] }}</span>
+      </div>
+    {% endfor %}
+  </div>
+</a>
+
+<p>Sube tus fotos una vez y reúsalas todo el año. Etiquetar una foto es decirle
+   a Portada qué lugar ocupa en la miniatura.</p>
+
+<p class="vacio">La miniatura llega en la próxima fase.</p>
+{% endblock %}

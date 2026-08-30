@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block titulo %}Librería · Portada{% endblock %}
+
+{% block cabecera %}
+<header class="cabecera">
+  <a class="volver" href="/">‹ Inicio</a>
+  <p class="mono">{{ fotos|length }} {{ "foto" if fotos|length == 1 else "fotos" }}</p>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<div>
+  <h1>Librería</h1>
+  {% if role %}<p>{{ ayudas[role] }}</p>{% endif %}
+</div>
+
+<nav class="filtros" aria-label="Filtrar por rol">
+  <a class="filtro" href="/libreria" aria-current="{{ 'true' if not role else 'false' }}">Todas</a>
+  {% for r in roles %}
+    <a class="filtro" href="/libreria?role={{ r }}"
+       aria-current="{{ 'true' if role == r else 'false' }}">
+      {{ etiquetas[r] }} {{ stats.get(r, 0) }}
+    </a>
+  {% endfor %}
+</nav>
+
+<div class="grilla">
+  {# Subir: un `label` envuelve un input oculto para que toda la celda sea el
+     objetivo de toque, y el formulario se manda solo al elegir el archivo.
+     Sin rol filtrado hay que preguntarlo: subir a un rol al azar sería peor
+     que preguntar. #}
+  <form method="post" action="/libreria/fotos" enctype="multipart/form-data" id="subida">
+    <div class="subir">
+      {% if role %}
+        <input type="hidden" name="role" value="{{ role }}">
+      {% else %}
+        {# Sin rol filtrado se pregunta aquí en vez de suponer uno: subir al rol
+           equivocado es trabajo que alguien tiene que deshacer, y el desplegable
+           dice de antemano dónde va a caer la foto. #}
+        <select name="role" aria-label="Rol de la foto">
+          {% for r in roles %}<option value="{{ r }}">{{ etiquetas[r] }}</option>{% endfor %}
+        </select>
+      {% endif %}
+      <label class="subir-boton">
+        <span class="mas" aria-hidden="true">+</span>
+        <span>{% if role %}Subir a {{ etiquetas[role]|lower }}{% else %}Subir foto{% endif %}</span>
+        <input type="file" name="file" accept="image/*"
+               onchange="document.getElementById('subida').submit()">
+      </label>
+    </div>
+  </form>
+
+  {% for foto in fotos %}
+    {# La grilla NO borra: se entra al detalle y allí está el segundo paso. #}
+    <a class="foto" href="/libreria/fotos/{{ foto.id }}">
+      <div class="miniatura {{ 'entera' if foto.role in ('logo', 'marco') }}">
+        <img src="{{ foto.url }}" alt="{{ foto.etiqueta }}" width="{{ foto.ancho }}"
+             height="{{ foto.alto }}" loading="lazy">
+      </div>
+      <span class="pie">{{ foto.etiqueta }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+{% if not fotos %}
+  <p class="vacio">
+    Aquí no hay nada todavía.
+    {% if role %}Sube tu primera foto de {{ etiquetas[role]|lower }}.{% endif %}
+  </p>
+{% endif %}
+{% endblock %}

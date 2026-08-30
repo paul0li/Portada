@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block titulo %}{{ etiquetas[role] }} · Portada{% endblock %}
+{% block cabecera %}{% include "_paso.html" %}{% endblock %}
+
+{% block contenido %}
+<div>
+  <h1>{{ etiquetas[role] }}</h1>
+  <p>{{ ayudas[role] }}</p>
+</div>
+
+<div class="grilla">
+  {# Subir sin salirse del paso: el invitado se sube cada semana (SPEC §8, paso
+     3), y mandar a la librería a por él costaría perder lo ya elegido. #}
+  <form method="post" action="/libreria/fotos" enctype="multipart/form-data" id="subida">
+    <input type="hidden" name="role" value="{{ role }}">
+    <input type="hidden" name="volver" value="{{ aqui }}">
+    <label class="subir">
+      <span class="mas" aria-hidden="true">+</span>
+      <span>Subir {{ etiquetas[role]|lower }}</span>
+      <input type="file" name="file" accept="image/*"
+             onchange="document.getElementById('subida').submit()">
+    </label>
+  </form>
+
+  {% if fotos %}
+    {% for foto in fotos %}
+      <a class="foto" href="{{ foto.toque }}"
+         aria-pressed="{{ 'true' if foto.puesta else 'false' }}">
+        <div class="miniatura {{ 'entera' if foto.role in ('logo', 'marco') }}
+                    {{ 'puesta' if foto.puesta }}">
+          <img src="{{ foto.url }}" alt="{{ foto.etiqueta }}" width="{{ foto.ancho }}"
+               height="{{ foto.alto }}" loading="lazy">
+          {% if foto.puesta %}<span class="marca-puesta" aria-hidden="true">✓</span>{% endif %}
+        </div>
+        <span class="pie">{{ foto.etiqueta }}</span>
+      </a>
+    {% endfor %}
+  {% endif %}
+</div>
+
+<div class="pie-flujo">
+  {% if not obligatorio and elegidas == 0 %}
+    <a class="boton secundario" href="{{ siguiente }}">Omitir</a>
+  {% elif obligatorio and elegidas == 0 %}
+    {# No se avanza sin conductor, y se dice aquí y no al final: enterarte de que
+       falta algo después de escribir el título es enterarte demasiado tarde. #}
+    <p class="aviso malo" role="status">
+      Elige una foto de {{ etiquetas[role]|lower }} para seguir.
+    </p>
+  {% else %}
+    <a class="boton" href="{{ siguiente }}">
+      Siguiente · {{ elegidas }} elegida{{ "s" if elegidas > 1 }}
+    </a>
+  {% endif %}
+</div>
+{% endblock %}
