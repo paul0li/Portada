@@ -10,6 +10,8 @@ moriria justo en la capa nueva.
 import io
 import re
 
+from fastapi.testclient import TestClient
+
 OTRO_EMAIL = "otra@ejemplo.cl"
 
 
@@ -421,3 +423,94 @@ def test_web_21_la_vuelta_despues_de_subir_no_sale_de_portada(client, imagen):
         assert destino.startswith("/") and not destino.startswith("//"), (
             f"redirección abierta con volver={fuera!r} -> {destino!r}"
         )
+
+
+# --- el preview en vivo --------------------------------------------------
+
+
+def test_web_22_cada_paso_ensena_el_preview(client, imagen):
+    """SPEC 8.4 y 9: la miniatura se ve mientras se elige, fijada sobre el paso.
+    Por eso armar deja de ser una revelacion."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    from PIL import Image
+
+    for paso, params in (
+        (1, {}),
+        (2, {"conductor": ids["conductor"]}),
+        (5, {"conductor": ids["conductor"], "invitado": ids["invitado"]}),
+    ):
+        pagina = client.get("/nueva", params={"paso": paso, **params})
+        assert pagina.status_code == 200, paso
+        src = re.search(r'id="preview" src="([^"]+)"', pagina.text)
+        assert src, f"el paso {paso} no ensena preview"
+
+        imagen_preview = client.get(src.group(1).replace("&amp;", "&"))
+        assert imagen_preview.status_code == 200, paso
+        assert imagen_preview.headers["content-type"] == "image/jpeg"
+        abierta = Image.open(io.BytesIO(imagen_preview.content))
+        assert abierta.size == (640, 360), paso
+        # Y lleva puesto lo elegido: la marca va siempre, sin pedirla.
+        for photo_id in params.values():
+            assert photo_id in src.group(1)
+
+
+def test_web_23_el_preview_refleja_el_titulo(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    base = {"conductor": ids["conductor"]}
+
+    sin_titulo = client.get("/nueva/preview.jpg", params={**base, "title": ""})
+    con_titulo = client.get("/nueva/preview.jpg", params={**base, "title": "UN TITULO LARGO"})
+
+    assert sin_titulo.status_code == con_titulo.status_code == 200
+    assert sin_titulo.content != con_titulo.content, "el titulo no llega al preview"
+
+    # Y el paso del titulo trae con que repintar sin recargar la pagina.
+    paso = client.get("/nueva", params={"paso": 5, **base}).text
+    assert 'id="titulo"' in paso and "addEventListener" in paso
+
+
+def test_web_24_no_puedo_pedir_el_preview_con_la_foto_de_otro(client, imagen):
+    """Dos formas de que la foto no sea tuya, y las dos cuentan.
+
+    La primera -- sesion de otra persona -- es dificil de romper aqui: no existe
+    ninguna funcion que busque una foto solo por su id (ver `library/repo.py`),
+    asi que `get_photo` filtra por usuario siempre. La segunda -- sin sesion --
+    depende de que la ruta se acuerde de pedirla, y esa SI se puede olvidar.
+    """
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    parametros = {"conductor": ids["conductor"]}
+
+    sin_sesion = TestClient(client.app).get(
+        "/nueva/preview.jpg", params=parametros, follow_redirects=False
+    )
+    assert sin_sesion.status_code == 401, "sirvio un preview sin sesion"
+    assert sin_sesion.content[:2] != b"\xff\xd8"
+
+    client.post("/salir")
+    _entrar(client, OTRO_EMAIL)
+    de_otra = client.get("/nueva/preview.jpg", params=parametros)
+
+    assert de_otra.status_code != 200, "me dio un preview con la foto de otra persona"
+    assert de_otra.content[:2] != b"\xff\xd8", "devolvio un JPEG igualmente"
+
+
+def test_web_25_si_el_preview_falla_la_pantalla_no_se_rompe(client, imagen):
+    """SPEC 11.4 llevado a la UI: el preview es mejora, nunca dependencia."""
+    _entrar(client)
+
+    # Un id inventado: la seleccion no resuelve.
+    respuesta = client.get("/nueva/preview.jpg", params={"conductor": "no-existe"})
+
+    assert respuesta.status_code in (204, 404)
+    assert "text/html" not in respuesta.headers.get("content-type", "")
+    assert b"Traceback" not in respuesta.content
+
+    # Y el paso sigue pintandose: el preview que falla no se lleva la pagina.
+    paso = client.get("/nueva", params={"conductor": "no-existe"})
+    assert paso.status_code == 200
+    assert 'id="preview"' in paso.text
+    assert "onerror" in paso.text, "un preview roto dejaria el icono de imagen partida"

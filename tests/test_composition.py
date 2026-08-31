@@ -381,3 +381,99 @@ def test_composition_15_armar_tarda_menos_de_400ms(fotos):
     transcurrido = (time.perf_counter() - empezo) * 1000
 
     assert transcurrido < 400, f"el armado tardo {transcurrido:.0f} ms"
+
+
+# --- el preview ----------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _cache_limpia():
+    """La cache de bases es estado de proceso: cada test empieza sin ella.
+
+    Se puede vaciar a proposito y no por un decorador escondido, que es lo que
+    permite que COMPOSITION-22 mire si hubo acierto en vez de suponerlo.
+    """
+    assembly.BASES.clear()
+    yield
+    assembly.BASES.clear()
+
+
+def test_composition_21_el_checksum_de_la_base_ignora_el_overlay(fotos, tmp_path):
+    """Logo, marco y titulo son overlay: cambiarlos no toca lo que hay debajo.
+
+    OJO al escribir este test: comprobar que el checksum CAMBIA con las fotos
+    pasa igual con el titulo colado dentro del hash. Lo que delata el bug es
+    cambiar SOLO el titulo y exigir que el checksum sea identico.
+    """
+    marco = tmp_path / "marco.png"
+    Image.new("RGBA", (1280, 720), (233, 40, 39, 120)).save(marco)
+
+    base = composition.Brief(
+        title="UNO", photos={"conductor": [fotos["conductor"]], "fondo": [fotos["fondo"]]}
+    )
+    otro_titulo = composition.Brief(title="OTRO TITULO DISTINTO", photos=base.photos)
+    con_logo = composition.Brief(
+        title="UNO",
+        photos={**base.photos, "logo": [fotos["logo"]], "marco": [marco]},
+    )
+    otra_foto = composition.Brief(
+        title="UNO", photos={**base.photos, "invitado": [fotos["invitado"]]}
+    )
+
+    assert composition.base_checksum(base) == composition.base_checksum(otro_titulo)
+    assert composition.base_checksum(base) == composition.base_checksum(con_logo)
+    assert composition.base_checksum(base) != composition.base_checksum(otra_foto)
+
+
+def test_composition_22_cambiar_el_titulo_reusa_la_base(fotos):
+    brief = _brief(fotos, conductor=1, invitado=1, fondo=1, logo=1)
+
+    composition.preview(brief)
+    dibujadas = assembly.BASES.dibujadas
+
+    composition.preview(composition.Brief(title="OTRO TITULO", photos=brief.photos))
+
+    assert assembly.BASES.dibujadas == dibujadas, "volvio a componer la base por un titulo"
+
+    # Y cambiar una foto si la invalida: la cache no puede ser un agujero.
+    sin_fondo = {k: v for k, v in brief.photos.items() if k != "fondo"}
+    composition.preview(composition.Brief(title="OTRO TITULO", photos=sin_fondo))
+    assert assembly.BASES.dibujadas == dibujadas + 1
+
+
+def test_composition_23_el_preview_es_la_misma_composicion(fotos):
+    """Mismo template y mismo layout: solo mas pequeno y en JPEG.
+
+    Si el preview fuera otra implementacion, «el layout vive en un archivo»
+    dejaria de ser cierto y las dos se irian separando sin que nada fallara.
+    """
+    brief = _brief(fotos, conductor=1, invitado=1, fondo=1, logo=1)
+
+    chico = Image.open(io.BytesIO(composition.preview(brief)))
+    grande = _abrir(composition.compose(brief).final)
+
+    assert chico.format == "JPEG"
+    assert chico.size == (640, 360)
+    assert chico.size[0] / chico.size[1] == grande.size[0] / grande.size[1]
+
+    # El mismo pixel, en la misma posicion relativa, es del mismo color. Se
+    # comparan puntos planos (el conductor, el fondo) y con holgura, porque JPEG
+    # y el reescalado mueven unidades.
+    ampliado = chico.convert("RGB").resize(grande.size, Image.LANCZOS)
+    for punto in ((1010, 500), (100, 100), (1240, 60)):
+        a, b = ampliado.getpixel(punto), grande.getpixel(punto)
+        assert all(abs(x - y) < 24 for x, y in zip(a, b, strict=True)), (
+            f"en {punto} el preview dice {a} y el armado {b}: no es la misma composicion"
+        )
+
+
+@pytest.mark.perf
+def test_composition_24_repintar_por_titulo_tarda_menos_de_60ms(fotos):
+    brief = _brief(fotos, conductor=1, invitado=1, fondo=1, logo=1, objeto=1)
+    composition.preview(brief)  # deja la base en la cache
+
+    empezo = time.perf_counter()
+    composition.preview(composition.Brief(title="UN TITULO NUEVO", photos=brief.photos))
+    transcurrido = (time.perf_counter() - empezo) * 1000
+
+    assert transcurrido < 60, f"repintar por titulo tardo {transcurrido:.0f} ms"

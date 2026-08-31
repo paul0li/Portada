@@ -7,7 +7,6 @@
 <title>{% block titulo %}Portada{% endblock %}</title>
 <link rel="stylesheet" href="/estatico/fonts.css">
 <link rel="stylesheet" href="/estatico/app.css">
-<script src="/estatico/htmx.min.js" defer></script>
 </head>
 <body>
 <div class="marco">
@@ -17,5 +16,6 @@
     {% block contenido %}{% endblock %}
   </main>
 </div>
+{% block scripts %}{% endblock %}
 </body>
 </html>

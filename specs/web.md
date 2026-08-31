@@ -46,6 +46,17 @@ la da por puesta.
 - **WEB-20** — puedo subir la foto del invitado sin salirme del flujo, y vuelvo al mismo paso con lo elegido intacto (SPEC §8, paso 3: el invitado se sube cada semana).
 - **WEB-21** — la vuelta después de subir es siempre dentro de Portada: una dirección externa se ignora.
 
+## El preview en vivo
+
+SPEC §8.4 y §9: la miniatura se ve mientras se elige, fijada sobre el paso. Por
+eso la generación deja de ser una revelación — para cuando se escribe el título
+ya se ha visto el resultado.
+
+- **WEB-22** — cada paso del flujo enseña el preview de lo elegido hasta ahí.
+- **WEB-23** — el preview refleja el título que estoy escribiendo, sin recargar la página.
+- **WEB-24** — el preview de una foto que no es mía no se puede pedir, ni con la sesión de otra persona ni sin sesión.
+- **WEB-25** — si el preview falla, la pantalla no se queda en blanco ni enseña un error crudo (SPEC §11.4 llevado a la UI).
+
 ## La forma de las páginas
 
 - **WEB-10** — toda página privada se sirve con `Cache-Control: no-store`: nada de lo que hay dentro es de nadie más.

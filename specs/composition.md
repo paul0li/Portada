@@ -36,6 +36,17 @@ y un título, sale un PNG.
 - **COMPOSITION-19** — el título nunca se pisa con la regla de acento, sea cual sea la tipografía: el bloque se ancla a la línea base, no a la ascendente, que cada fuente elige a su gusto.
 - **COMPOSITION-20** — la tipografía viene del repo, no del sistema: si no, el mismo brief da píxeles distintos en dos máquinas y el armado deja de ser determinista.
 
+## El preview
+
+Lo que hace posible el preview en vivo de SPEC §8.4 no es un motor aparte: es la
+separación `base`/`final` que ya existía para la pasada de IA. Cambiar el título
+no toca la base, y la base es lo caro.
+
+- **COMPOSITION-21** — el checksum de la base ignora el logo, el marco y el título: son *overlay*, y cambiarlos no invalida lo que hay debajo.
+- **COMPOSITION-22** — cambiar solo el título reusa la base ya dibujada en vez de volver a componerla.
+- **COMPOSITION-23** — el preview sale de la misma composición: mismo template y mismo layout, solo más pequeño y en JPEG. Si fuera otra implementación, dejaría de ser cierto que el layout vive en un archivo.
+- **COMPOSITION-24** — repintar el preview por un cambio de título tarda menos de 60 ms.
+
 ## Identidad del armado
 
 - **COMPOSITION-13** — el checksum del brief cambia si cambia el título, las fotos o la versión del template, y no cambia si no cambia nada.

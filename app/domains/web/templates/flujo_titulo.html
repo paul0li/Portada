@@ -16,7 +16,7 @@
 
   <label>
     <span class="rotulo">Título del episodio</span>
-    <textarea name="title" rows="2" required
+    <textarea id="titulo" name="title" rows="2" required
               placeholder="Nadie esperaba esta respuesta">{{ titulo or "" }}</textarea>
   </label>
 
@@ -52,4 +52,26 @@
     {% endfor %}
   </dl>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Lo único que no puede hacer una navegación: repintar mientras se teclea.
+// Son ~200 ms de espera y ~35 ms de servidor, porque cambiar el título no
+// vuelve a componer la base -- ver COMPOSITION-22.
+(() => {
+  const campo = document.getElementById("titulo");
+  const imagen = document.getElementById("preview");
+  if (!campo || !imagen) return;
+  const base = imagen.src.split("&title=")[0];
+  let pendiente;
+  campo.addEventListener("input", () => {
+    clearTimeout(pendiente);
+    pendiente = setTimeout(() => {
+      imagen.src = base + "&title=" + encodeURIComponent(campo.value);
+      imagen.style.visibility = "visible";
+    }, 200);
+  });
+})();
+</script>
 {% endblock %}

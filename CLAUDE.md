@@ -5,9 +5,25 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 
 ## Outcome actual
 
-**Fase 2 del frontend — hago una miniatura y la descargo.** El flujo semanal
-entero desde el teléfono: elijo conductor, invitado, fondo y objetos, escribo el
-título, y sale un PNG 1280×720 descargable. **166 tests.**
+**Fase 3 del frontend — el preview se actualiza en cada toque (SPEC §8.4).** La
+miniatura va fijada sobre cada paso y se repinta al elegir una foto y al teclear
+el título. Armar deja de ser una revelación: para cuando se escribe el título ya
+se vio el resultado. **174 tests.**
+
+Y la decisión de `CLAUDE.md` que decía que «el backend renderiza» se revertiría
+si hiciera falta esto **se queda**, porque la pieza que lo abarata ya estaba
+construida: la separación `base`/`final` de SPEC §7. Medido:
+
+| Camino | p50 |
+| --- | --- |
+| repintar por el título (base en caché) | **24 ms** |
+| primera vez, sin caché | 247 ms |
+| peso: preview JPEG 640×360 vs PNG final | 71 KB vs 255 KB |
+
+<details><summary>Fase 2 — hago una miniatura y la descargo</summary>
+
+El flujo semanal entero desde el teléfono: elijo conductor, invitado, fondo y
+objetos, escribo el título, y sale un PNG 1280×720 descargable.
 
 El flujo son **cinco** pasos, no los seis del prototipo. Subir el logo y el marco
 es *setup* y SPEC §8 ya lo cuenta como tal («el trabajo recurrente son los pasos
@@ -18,6 +34,8 @@ un compositor, que es exactamente lo que SPEC §11.3 prohíbe. `WEB-18` lo vigil
 
 **El borrador del flujo vive en la URL**, no en el servidor: sin tabla de
 borradores, atrás y recargar funcionan solos, y no hay nada escondido.
+
+</details>
 
 <details><summary>Fase 1 — entro con mi correo y gestiono mi librería</summary>
 
@@ -216,7 +234,10 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-28 | **La tipografía se resuelve en cadena** (repo → sistema → error) | Las fuentes del sistema sirven para trabajar pero no son redistribuibles. Fallar con la fuente de mapa de bits de Pillow sería peor que fallar | Ya no: hay una fuente libre en el repo. La cadena queda como red, no como camino |
 | 2026-08-30 | **Anton en el repo**, no Impact | Impact es de Microsoft: no se puede redistribuir, y en Linux no existe. Anton es su equivalente libre (SIL OFL) | Comprar una licencia de la tipografía real del show |
 | 2026-08-30 | **El título se ancla a la línea base**, no a la ascendente | La ascendente la elige cada tipografía a su gusto; anclar a ella hacía que `bottom=500` significara una altura distinta según la fuente | Nada: la línea base es lo que «se apoya en y=500» quiere decir |
-| 2026-08-30 | **Jinja2 + htmx servidos por FastAPI**, cero Node | Es la única opción donde el método sobrevive: un criterio de pantalla se prueba con el `TestClient` que ya existe, dentro de `make test`. Con una SPA (Vite o HTML+`fetch`) haría falta un navegador — Playwright, segundo runtime, decenas de segundos — o no probar el frontend | Que el preview necesite estado de cliente que el servidor no puede tener (edición manual, arrastrar, canvas). Entonces: islas de JS, no una SPA |
+| 2026-08-31 | **Fuera htmx: HTML del servidor y ~15 líneas de JS** | Se vendorizó en la fase 1 y al terminar la 3 no lo usaba ni un atributo: todo son formularios y enlaces. Lo único que una navegación no puede hacer es repintar mientras se teclea, y eso son 15 líneas. 50 KB de dependencia para eso es peor que no tenerla | Que aparezcan muchos intercambios parciales — el A/B del resultado, reordenar objetos. Con tres o cuatro, htmx vuelve y se nota |
+| 2026-08-31 | **El preview no escribe nada**: ni fila, ni archivo | El episodio se crea al confirmar, no al mirar. Si el preview creara episodios, el historial se llenaría de borradores de gente que solo estaba probando | Nada |
+| 2026-08-31 | **Una caché de bases en memoria, explícita y no un `@lru_cache`** | Dibujar la base cuesta ~215 ms y repintar el overlay ~21 ms; sin caché, teclear recompondría el fondo y los recortes en cada tecla. Explícita porque así se puede vaciar en un test y se puede MIRAR si hubo acierto — que es lo que hace comprobable a `COMPOSITION-22` en vez de una intención | Más de una instancia. Entonces la caché o se comparte o se acepta que cada proceso tenga la suya |
+| 2026-08-30 | **Jinja2 servido por FastAPI**, cero Node | Es la única opción donde el método sobrevive: un criterio de pantalla se prueba con el `TestClient` que ya existe, dentro de `make test`. Con una SPA (Vite o HTML+`fetch`) haría falta un navegador — Playwright, segundo runtime, decenas de segundos — o no probar el frontend | Que el preview necesite estado de cliente que el servidor no puede tener (edición manual, arrastrar, canvas). Entonces: islas de JS, no una SPA |
 | 2026-08-30 | **Mismo origen: el frontend lo sirve el propio proceso** | Sin dev server aparte no hay CORS y la cookie httponly+lax se queda intacta. Un Vite en `:5173` habría costado `CORSMiddleware` con `allow_credentials` en código de producción, existiendo solo para una comodidad de desarrollo (`samesite` no habría hecho falta aflojarlo: el puerto no cuenta para el *site*) | Un cliente móvil nativo o un frontend en otro host. Ahí CORS es real, no una comodidad |
 | 2026-08-30 | **`web` habla su propio dialecto** (formularios y fragmentos), no consume la API JSON | Dos transportes, no dos implementaciones: los dos routers llaman a las mismas funciones de `library.api`. La API JSON queda intacta para el cliente que venga | Que los dos routers diverjan en reglas y no solo en formato. Sería la señal de que la regla se escribió en un router en vez de en el service |
 | 2026-08-30 | **`web` es el único dominio que puede importar `identity`** | Es quien DIBUJA la pantalla de entrar: pedirle que no sepa que existe un magic link es pedirle que dibuje un formulario sin saber de qué es. Lo que protegía la regla —que `library`, `episodes` y compañía no dependan de cómo se autenticó nadie— sigue intacto y verificado | Que `web` empiece a usar `identity` para algo que no sea su pantalla |
@@ -265,6 +286,15 @@ vuelvan a morder en la próxima.
   record ni se construye, así que el error **queda dormido hasta producción** —
   nos tumbó el arranque del servidor con los tests en verde. Dos defensas: los
   tests corren en DEBUG, y `CORE-13` lo caza estáticamente en todo `app/`.
+- **Un guardia de propiedad puede no poder fallar.** `WEB-24` comprobaba que el
+  preview de una foto ajena no se sirve, y pasaba aunque se quitara la
+  comprobación de sesión: sin sesión y con la foto de otro **daban la misma
+  respuesta**, así que el test no podía distinguirlos. Se arregló haciendo que
+  «sin sesión» conteste 401 y «esa selección no resuelve» conteste 204. Regla:
+  si dos caminos distintos producen la misma respuesta, un test no puede vigilar
+  uno de los dos. (Lo otro que aprendimos ahí: el guardia es difícil de romper de
+  verdad porque `library/repo.py` no tiene ninguna función que busque una foto
+  solo por su id. El invariante hace su trabajo.)
 - **Un fixture puede tapar justo lo que el test mira.** El marco de los tests de
   `web` era un rectángulo opaco, y a sangre completa tapaba la miniatura entera:
   el PNG final salía siendo una mancha de un color, idéntica pasara lo que

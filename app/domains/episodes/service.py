@@ -38,7 +38,11 @@ def _normalize_title(title: str) -> str:
 
 
 def _validate_selection(
-    db: Database, *, user_id: str, selection: dict[str, list[str]]
+    db: Database,
+    *,
+    user_id: str,
+    selection: dict[str, list[str]],
+    exigir_minimos: bool = True,
 ) -> dict[str, list[str]]:
     """Comprueba roles, cantidades y propiedad. Devuelve la seleccion limpia."""
     limpia: dict[str, list[str]] = {}
@@ -62,6 +66,9 @@ def _validate_selection(
         for photo_id in ids:
             library.get_photo(db, user_id=user_id, photo_id=photo_id)
         limpia[role] = ids
+
+    if not exigir_minimos:
+        return limpia
 
     for role, minimo in MINIMOS.items():
         if len(limpia.get(role, [])) < minimo:
@@ -138,29 +145,71 @@ def set_title(db: Database, *, user_id: str, episode_id: str, title: str) -> rep
 # --- el armado -----------------------------------------------------------
 
 
-def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> composition.Brief:
-    """Resuelve la seleccion a rutas de archivo.
+def _brief_de(
+    db: Database,
+    settings: Settings,
+    *,
+    user_id: str,
+    slots: dict[str, list[str]],
+    title: str,
+    referencia: str = "",
+) -> composition.Brief:
+    """Resuelve una seleccion a rutas de archivo.
 
-    Una foto borrada de la libreria se omite en vez de romper el episodio
-    (SPEC 11.11): el armado se degrada, no falla.
+    Una foto borrada de la libreria se omite en vez de romper nada
+    (SPEC 11.11): el resultado se degrada, no falla.
     """
     photos: dict[str, list] = {}
-    for role, photo_ids in episode.slots.items():
+    for role, photo_ids in slots.items():
         rutas = []
         for photo_id in photo_ids:
             try:
-                photo = library.get_photo(db, user_id=episode.user_id, photo_id=photo_id)
+                photo = library.get_photo(db, user_id=user_id, photo_id=photo_id)
             except Exception:
                 log.warning(
                     "episodes.photo_missing",
-                    extra={"episode_id": episode.id, "photo_id": photo_id, "role": role},
+                    extra={"episode_id": referencia, "photo_id": photo_id, "role": role},
                 )
                 continue
             media = library.resolve_media(db, settings, photo)
             rutas.append(intake.path(settings, media))
         if rutas:
             photos[role] = rutas
-    return composition.Brief(title=episode.title, photos=photos)
+    return composition.Brief(title=title, photos=photos)
+
+
+def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> composition.Brief:
+    return _brief_de(
+        db,
+        settings,
+        user_id=episode.user_id,
+        slots=episode.slots,
+        title=episode.title,
+        referencia=episode.id,
+    )
+
+
+def preview(
+    db: Database,
+    settings: Settings,
+    *,
+    user_id: str,
+    selection: dict[str, list[str]],
+    title: str,
+) -> bytes:
+    """La miniatura en pequeno de una seleccion que todavia no es un episodio.
+
+    No escribe nada: ni fila, ni archivo. Es lo que permite que el flujo semanal
+    ensene el resultado en cada toque sin dejar episodios a medias por el camino
+    (SPEC 8.4), y lo que hace que el episodio se cree solo cuando se confirma.
+
+    La seleccion se valida igual que al crear -- `get_photo` lanza 404 si la foto
+    no es tuya -- pero sin los MINIMOS: a mitad del flujo todavia no hay
+    conductor, y eso no es un error, es el paso 1.
+    """
+    limpia = _validate_selection(db, user_id=user_id, selection=selection, exigir_minimos=False)
+    brief = _brief_de(db, settings, user_id=user_id, slots=limpia, title=title)
+    return composition.preview(brief)
 
 
 def build_assembly(

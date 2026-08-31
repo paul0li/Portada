@@ -10,6 +10,7 @@ from app.domains.episodes.service import (
     get_episode,
     latest_assembly,
     list_episodes,
+    preview,
 )
 from app.domains.finishing.api import DEFAULT_STRENGTH, STRENGTHS
 
@@ -25,5 +26,6 @@ __all__ = [
     "get_episode",
     "latest_assembly",
     "list_episodes",
+    "preview",
     "router",
 ]

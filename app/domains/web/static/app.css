@@ -592,3 +592,24 @@ a:focus-visible,
   font-weight: 600;
   line-height: 1.25;
 }
+
+/* El preview fijado sobre el paso (SPEC §9). Se queda arriba al desplazar la
+   grilla: la miniatura es la referencia mientras se elige, no un adorno que se
+   pierde en cuanto hay tres filas de fotos. */
+.preview-fijo {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 10px 20px 12px;
+  background: linear-gradient(var(--pantalla) 78%, transparent);
+}
+
+.preview-fijo img {
+  width: 100%;
+  height: auto;
+  display: block;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radio);
+  border: 1px solid var(--linea);
+  background: repeating-linear-gradient(135deg, #e4e4df 0 7px, #edede9 7px 14px);
+}

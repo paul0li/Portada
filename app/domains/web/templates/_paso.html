@@ -4,3 +4,12 @@
   <p class="mono">PASO {{ paso }}/{{ total }}</p>
 </header>
 <div class="progreso"><div style="width: {{ (paso / total * 100)|round }}%"></div></div>
+
+{# El preview fijado sobre el paso (SPEC §9). Es lo que hace que armar deje de
+   ser una revelación: para cuando se escribe el título ya se vio el resultado.
+   `onerror` lo esconde en vez de dejar el icono de imagen partida: el preview
+   es mejora, nunca dependencia (SPEC §11.4). #}
+<div class="preview-fijo">
+  <img id="preview" src="{{ preview }}" alt="Cómo va quedando la miniatura"
+       width="640" height="360" onerror="this.style.visibility='hidden'">
+</div>

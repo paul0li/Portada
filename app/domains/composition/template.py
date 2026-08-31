@@ -206,3 +206,13 @@ TEMPLATE = Template()
 
 # Los roles que el armado dibuja, en el orden en que se dibujan.
 DRAW_ORDER = tuple(slot.role for slot in sorted(SLOTS.values(), key=lambda s: s.z))
+
+# Mobiliario de marca: va en el overlay junto al titulo y NUNCA pasa por un
+# modelo (SPEC 11.5). Esta division es la de SPEC 7 -- base / final -- y ahora
+# tambien es lo que hace barato el preview en vivo: el titulo, el logo y el
+# marco se repintan sin volver a componer lo que hay debajo, que es lo caro.
+OVERLAY_ROLES = ("logo", "marco")
+
+# Lo que forma la base, en orden de dibujo. Sale de SLOTS y no de una lista
+# escrita a mano: un rol nuevo cae en el sitio que le toque sin tocar nada.
+BASE_ROLES = tuple(role for role in DRAW_ORDER if role not in OVERLAY_ROLES)

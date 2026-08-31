@@ -16,6 +16,7 @@ Tres cosas, y solo tres, separan a este router del de la API:
 
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
@@ -171,10 +172,16 @@ def _seleccion(params) -> dict[str, list[str]]:
 
 
 def _url_flujo(paso: int, seleccion: dict[str, list[str]]) -> str:
-    partes = [f"paso={paso}"]
-    for role, ids in seleccion.items():
-        partes += [f"{role}={photo_id}" for photo_id in ids]
-    return "/nueva?" + "&".join(partes)
+    return "/nueva?" + urlencode([("paso", paso), *_pares(seleccion)])
+
+
+def _pares(seleccion: dict[str, list[str]]) -> list[tuple[str, str]]:
+    return [(role, photo_id) for role, ids in seleccion.items() for photo_id in ids]
+
+
+def _url_preview(seleccion: dict[str, list[str]], title: str = "") -> str:
+    """El `<img src>` del paso. Lleva lo mismo que la página, más el título."""
+    return "/nueva/preview.jpg?" + urlencode([*_pares(seleccion), ("title", title)])
 
 
 def _marca(db, settings, user_id: str) -> dict[str, dict]:
@@ -345,6 +352,41 @@ def detalle_foto(
 # --- la miniatura --------------------------------------------------------
 
 
+# `def` y no `async def`: aqui dentro corre Pillow.
+@router.get("/nueva/preview.jpg")
+def preview(
+    request: Request, db: Db, settings: Config, user_id: OptionalUser, title: str = ""
+) -> Response:
+    """La miniatura de lo que llevo elegido (SPEC §8.4).
+
+    Todo lo que necesita va en la URL, igual que el resto del flujo: así el
+    `<img>` de cada paso apunta a la misma selección que la página, sin estado
+    compartido entre los dos que se pueda desincronizar.
+
+    No escribe nada. El episodio se crea al confirmar, no al mirar.
+
+    Sin sesion contesta 401 y no redirige, que es la excepcion a WEB-01: esto no
+    es una pantalla, es el `src` de un `<img>`. Mandar una redireccion a HTML
+    dentro de una imagen solo consigue que el navegador se trague una pagina
+    entera para no poder pintarla. Y ademas el 401 se distingue del 204 de "esa
+    seleccion no resuelve", que es lo que permite comprobar que la sesion se
+    pide de verdad.
+    """
+    if user_id is None:
+        return Response(status_code=401, headers=SIN_CACHE)
+
+    seleccion = _seleccion(request.query_params)
+    seleccion |= {role: [foto["id"]] for role, foto in _marca(db, settings, user_id).items()}
+    try:
+        jpeg = episodes.preview(db, settings, user_id=user_id, selection=seleccion, title=title)
+    except AppError:
+        # SPEC §11.4 llevado a la UI: el preview es mejora, nunca dependencia.
+        # Un 204 deja el `<img>` con lo último bueno en vez de romper la maqueta
+        # con el icono de imagen partida.
+        return Response(status_code=204, headers=SIN_CACHE)
+    return Response(jpeg, media_type="image/jpeg", headers=SIN_CACHE)
+
+
 @router.get("/nueva")
 def flujo(
     request: Request, db: Db, settings: Config, user_id: OptionalUser, paso: int = 1
@@ -361,6 +403,7 @@ def flujo(
     contexto = {
         "paso": paso,
         "total": len(PASOS),
+        "preview": _url_preview(seleccion | {r: [f["id"]] for r, f in marca.items()}),
         "role": role,
         "etiquetas": ETIQUETAS,
         "ayudas": AYUDAS,
@@ -369,7 +412,7 @@ def flujo(
         "intensidades": episodes.STRENGTHS,
         "intensidad": episodes.DEFAULT_STRENGTH,
         "atras": _url_flujo(paso - 1, seleccion) if paso > 1 else "/",
-        "campos": [(r, i) for r, ids in seleccion.items() for i in ids],
+        "campos": _pares(seleccion),
     }
 
     if role == "titulo":
@@ -475,7 +518,10 @@ def crear(
                 "intensidad": strength,
                 "titulo": title,
                 "atras": _url_flujo(len(PASOS) - 1, formulario),
-                "campos": [(r, i) for r, ids in formulario.items() for i in ids],
+                "campos": _pares(formulario),
+                "preview": _url_preview(
+                    formulario | {r: [f["id"]] for r, f in marca.items()}, title
+                ),
                 "error": _mensaje(error),
             },
         )
