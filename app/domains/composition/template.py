@@ -12,7 +12,11 @@ coincidir con las viejas, y hay un test que falla si se edita sin subirlo.
 from dataclasses import dataclass, field
 from typing import Literal
 
-TEMPLATE_VERSION = 3
+TEMPLATE_VERSION = 4
+# v4 (2026-08-31): el degradado que responde a "no hay fondo" pasa de oscuro a
+#   claro. Solo se ve cuando el episodio no trae foto de fondo, pero eso es
+#   justo el caso por defecto: es el fondo que tiene una miniatura cuando nadie
+#   eligio uno.
 # v3 (2026-08-30): Anton entra al repo como tipografia del titulo, y el titulo
 #   pasa a anclarse a la linea base en vez de a la ascendente. Ninguna de las dos
 #   cosas esta en este archivo, pero las dos mueven cada pixel del titulo: sin
@@ -157,12 +161,15 @@ class Palette:
     # El rojo exacto del marco del show, muestreado de marco.png. La regla de
     # acento repite la marca en vez de competir con ella.
     accent: tuple[int, int, int] = (233, 40, 39)
-    # Neutro frio, y no granate como antes: sobre un fondo rojizo la regla de
-    # acento roja no se ve, y el marco rojo del show pierde fuerza. Con este
-    # degradado el rojo es lo unico rojo, que es de lo que se trataba.
+    # Claro, y neutro frio. Lo de "neutro frio" viene de v2 y sigue mandando:
+    # sobre cualquier cosa rojiza la regla de acento no se ve y el marco rojo
+    # del show pierde fuerza, asi que el rojo tiene que ser lo unico rojo.
+    # Lo de "claro" es de v4, y no es gratis: el titulo es blanco con contorno
+    # oscuro, asi que sobre este degradado se lee por el CONTORNO y no por el
+    # relleno. Se comprobo a 320px, que es el tamano al que se ve en un feed.
     gradient: tuple[tuple[int, int, int], tuple[int, int, int]] = (
-        (38, 42, 58),
-        (16, 17, 22),
+        (238, 240, 245),
+        (188, 194, 208),
     )
     shadow: tuple[int, int, int] = (0, 0, 0)
 

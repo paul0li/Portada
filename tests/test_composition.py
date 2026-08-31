@@ -338,7 +338,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "38317044320c5334"
+HUELLA_DEL_TEMPLATE = "f2e031c3d254a4ca"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():
