@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block titulo %}Título · Portada{% endblock %}
+{% block cabecera %}{% include "_paso.html" %}{% endblock %}
+
+{% block contenido %}
+<div>
+  <h1>Título</h1>
+  <p>Sale sobre la miniatura, en mayúsculas. Unos 70 caracteres.</p>
+</div>
+
+<form method="post" action="/nueva" class="tarjeta">
+  {# La selección de los pasos anteriores viaja con el formulario. #}
+  {% for role, photo_id in campos %}
+    <input type="hidden" name="{{ role }}" value="{{ photo_id }}">
+  {% endfor %}
+
+  <label>
+    <span class="rotulo">Título del episodio</span>
+    <textarea id="titulo" name="title" rows="2" required
+              placeholder="Nadie esperaba esta respuesta">{{ titulo or "" }}</textarea>
+  </label>
+
+  <fieldset class="intensidad">
+    <legend class="rotulo">Intensidad del acabado</legend>
+    <div class="fila">
+    {% for opcion in intensidades %}
+      <label class="opcion">
+        <input type="radio" name="strength" value="{{ opcion }}"
+               {{ "checked" if opcion == intensidad }}>
+        <span>{{ opcion|capitalize }}</span>
+      </label>
+    {% endfor %}
+    </div>
+  </fieldset>
+
+  <button class="boton" type="submit">Armar miniatura</button>
+</form>
+
+<div class="tarjeta">
+  <p class="rotulo">Se va a usar</p>
+  <dl class="resumen">
+    {% for role in ("conductor", "invitado", "fondo", "objeto") %}
+      <div>
+        <dt>{{ etiquetas[role] }}</dt>
+        <dd>{{ seleccion.get(role, [])|length or "—" }}</dd>
+      </div>
+    {% endfor %}
+    {# La marca no se pide cada semana, pero se DICE: una entrada invisible en el
+       checksum del armado sería peor que un paso de más. #}
+    {% for role, foto in marca.items() %}
+      <div><dt>{{ etiquetas[role] }}</dt><dd>{{ foto.etiqueta }}</dd></div>
+    {% endfor %}
+  </dl>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Lo único que no puede hacer una navegación: repintar mientras se teclea.
+// Son ~200 ms de espera y ~35 ms de servidor, porque cambiar el título no
+// vuelve a componer la base -- ver COMPOSITION-22.
+(() => {
+  const campo = document.getElementById("titulo");
+  const imagen = document.getElementById("preview");
+  if (!campo || !imagen) return;
+  const base = imagen.src.split("&title=")[0];
+  let pendiente;
+  campo.addEventListener("input", () => {
+    clearTimeout(pendiente);
+    pendiente = setTimeout(() => {
+      imagen.src = base + "&title=" + encodeURIComponent(campo.value);
+      imagen.style.visibility = "visible";
+    }, 200);
+  });
+})();
+</script>
+{% endblock %}

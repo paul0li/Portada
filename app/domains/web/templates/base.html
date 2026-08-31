@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>{% block titulo %}Portada{% endblock %}</title>
+<link rel="stylesheet" href="/estatico/fonts.css">
+<link rel="stylesheet" href="/estatico/app.css">
+</head>
+<body>
+<div class="marco">
+  {% block cabecera %}{% endblock %}
+  <main class="contenido">
+    {% if error %}<p class="aviso malo" role="alert">{{ error }}</p>{% endif %}
+    {% block contenido %}{% endblock %}
+  </main>
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

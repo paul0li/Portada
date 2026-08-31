@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block titulo %}Entrar · Portada{% endblock %}
+
+{% block cabecera %}
+<header class="cabecera">
+  <div>
+    <p class="rotulo">Miniaturas</p>
+    <h1>Portada</h1>
+  </div>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<p>Este enlace es tuyo y sirve una sola vez.</p>
+
+{# El token va en un campo y no en la URL de un GET: abrir el enlace no inicia
+   sesión, hace falta pulsar. Así ningún GET cambia estado y un escáner de
+   enlaces corporativo no gasta el enlace antes de que lo abras. #}
+<form method="post" action="/entrar/verificar" class="tarjeta">
+  <input type="hidden" name="token" value="{{ token }}">
+  <button class="boton" type="submit">Entrar a Portada</button>
+</form>
+
+<p class="mono">¿No lo pediste tú? Cierra esta página y no pasa nada.</p>
+{% endblock %}

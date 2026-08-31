@@ -218,3 +218,27 @@ def test_identity_21_el_email_completo_no_llega_a_los_logs(client, mailer, logs)
     escrito = logs.getvalue()
     assert EMAIL not in escrito, "el email completo quedo en los logs"
     assert "p***@ejemplo.cl" in escrito, "se esperaba el email enmascarado"
+
+
+def test_identity_22_el_enlace_del_correo_se_puede_abrir(client, mailer):
+    """El enlace apuntaba a `/auth/verify`, que solo acepta POST: abrirlo daba
+    405. Nadie lo noto porque los tests extraen el token y lo postean -- ninguno
+    abre el enlace, que es lo unico que hace una persona."""
+    _pedir(client)
+
+    respuesta = client.get(_link(mailer))
+
+    assert respuesta.status_code == 200, f"abrir el enlace del correo da {respuesta.status_code}"
+    assert "text/html" in respuesta.headers["content-type"]
+
+
+def test_identity_23_abrir_el_enlace_no_inicia_sesion_por_si_solo(client, mailer):
+    """Ningun GET cambia estado: es lo que hace que samesite=lax baste como
+    defensa CSRF, y lo que evita que un escaner de enlaces queme el token."""
+    _pedir(client)
+
+    client.get(_link(mailer))
+
+    assert client.get("/auth/me").status_code == 401, "un GET inicio sesion"
+    # Y el token sigue sirviendo: abrirlo no lo gasto.
+    assert client.post("/auth/verify", json={"token": _token(mailer)}).status_code == 200

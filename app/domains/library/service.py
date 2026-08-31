@@ -3,9 +3,9 @@
 Coordina el ciclo de vida de una foto: entra por `intake` (bytes), se le pide el
 recorte a `processing`, y queda en el catalogo con su rol.
 
-Los cinco roles y sus minimos son de SPEC 6 y viven aca ademas de en el CHECK
-de la migracion. La duplicacion es a proposito: el CHECK impide una fila
-invalida, esta constante da un mensaje de error util.
+Los roles y sus minimos son de SPEC 6 y viven aca ademas de en el CHECK de la
+migracion. La duplicacion es a proposito: el CHECK impide una fila invalida,
+esta constante da un mensaje de error util.
 """
 
 from typing import BinaryIO
@@ -19,10 +19,15 @@ from app.domains.processing import api as processing
 
 log = get_logger("portada.library")
 
-ROLES = ("conductor", "invitado", "objeto", "fondo", "logo")
+# `marco` es el sexto: mobiliario de marca, como el logo, y como el logo vive
+# aca y no en el template. El template es de quien escribe el codigo; el marco
+# es del show. Meterlo en template.py seria meter el PNG de un cliente en el
+# repo, y dejaria el armado de SPEC 15.3 sin reproducir por HTTP.
+ROLES = ("conductor", "invitado", "objeto", "fondo", "logo", "marco")
 
-# Los roles que se componen como recorte (SPEC 6). `fondo` va a sangre completa
-# y `logo` se pega tal cual: pedirles un recorte no tendria sentido.
+# Los roles que se componen como recorte (SPEC 6). `fondo` va a sangre completa,
+# y `logo` y `marco` se pegan tal cual con la transparencia que ya traen:
+# pedirles un recorte no tendria sentido.
 ROLES_CON_RECORTE = frozenset({"conductor", "invitado", "objeto"})
 
 MAX_LABEL = 120

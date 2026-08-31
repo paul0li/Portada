@@ -24,5 +24,7 @@ con `composition`, guarda con `intake` y pasa por `finishing`.
 
 - **EPISODES-11** — listar devuelve solo mis episodios, del más reciente al más antiguo.
 - **EPISODES-12** — el episodio de otro usuario devuelve 404.
-- **EPISODES-13** — descargar el armado devuelve el PNG con `ETag` inmutable.
+- **EPISODES-13** — descargar el armado devuelve el PNG con `ETag`, y se revalida en vez de cachearse un año: esa URL sirve *el último* armado, y corregir el título produce otro.
 - **EPISODES-14** — una foto borrada de la librería no rompe un episodio que ya la usó (SPEC §11.11).
+- **EPISODES-15** — un episodio con `marco` lo lleva hasta los píxeles: el armado por HTTP produce lo mismo que el armado por script.
+- **EPISODES-16** — corregir el título cambia lo que sirve la URL del armado, y un cliente que la había pedido antes se entera.

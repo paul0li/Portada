@@ -35,3 +35,8 @@ los demás solo ven un `UserId`.
 
 - **IDENTITY-20** — ni el token del enlace ni la cookie de sesión aparecen nunca en los logs.
 - **IDENTITY-21** — el email completo no aparece en los logs; solo su versión enmascarada.
+
+## Abrir el enlace
+
+- **IDENTITY-22** — el enlace del correo se puede abrir: apunta a una página que responde a `GET`, no a un endpoint que solo acepta `POST`.
+- **IDENTITY-23** — abrir el enlace no inicia sesión por sí solo: canjear el token sigue siendo un `POST`, para que ningún `GET` cambie estado y un escáner de enlaces no queme el token.

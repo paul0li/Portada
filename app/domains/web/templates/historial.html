@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Historial · Portada{% endblock %}
+
+{% block cabecera %}
+<header class="cabecera">
+  <a class="volver" href="/">‹ Inicio</a>
+  <p class="mono">{{ episodios|length }}</p>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<h1>Historial</h1>
+
+{% if episodios %}
+  <div class="lista-episodios">
+    {% for ep in episodios %}
+      {% include "_episodio.html" %}
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="vacio">Aquí van a aparecer tus miniaturas. <a href="/nueva">Haz la primera</a>.</p>
+{% endif %}
+{% endblock %}

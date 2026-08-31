@@ -183,7 +183,11 @@ def test_episodes_13_el_armado_se_descarga_con_etag(logged_in, imagen):
 
     primera = logged_in.get(f"/episodes/{episode_id}/assembly/file")
     etag = primera.headers["etag"]
-    assert "immutable" in primera.headers["cache-control"]
+    cache = primera.headers["cache-control"]
+    # Esta URL sirve EL ULTIMO armado, y corregir el titulo produce otro.
+    assert "immutable" not in cache, "promete que nunca cambia, y cambia"
+    assert "no-cache" in cache
+    assert "public" not in cache
 
     repetida = logged_in.get(
         f"/episodes/{episode_id}/assembly/file", headers={"If-None-Match": etag}
@@ -207,3 +211,83 @@ def test_episodes_14_una_foto_borrada_no_rompe_el_episodio(logged_in, imagen):
     rearmado = logged_in.post(f"/episodes/{episode_id}/assembly")
     assert rearmado.status_code == 201
     assert logged_in.get(f"/episodes/{episode_id}/assembly/file").status_code == 200
+
+
+def test_episodes_15_un_episodio_con_marco_lo_lleva_hasta_los_pixeles(
+    logged_in, imagen, settings, db
+):
+    """SPEC 15.3: la grilla que valida el producto se armo con rutas locales.
+    Este test exige el mismo resultado, pero entrando por HTTP."""
+    from app.domains.composition import api as composition
+    from app.domains.intake import api as intake
+    from app.domains.library import api as library
+
+    fotos = _libreria(logged_in, imagen, "conductor", "invitado")
+    marco = logged_in.post(
+        "/photos",
+        data={"role": "marco"},
+        # Un marco opaco entero: si llego hasta el final, no se ve nada mas.
+        files={"file": ("marco.png", imagen(size=(1280, 720), color=(233, 40, 39)), "image/png")},
+    )
+    assert marco.status_code == 201, marco.text
+    fotos["marco"] = marco.json()["id"]
+
+    episode_id = _crear(logged_in, fotos).json()["id"]
+    assert logged_in.post(f"/episodes/{episode_id}/assembly").status_code == 201
+
+    final = logged_in.get(f"/episodes/{episode_id}/assembly/file")
+    assert final.status_code == 200
+    imagen_final = Image.open(io.BytesIO(final.content))
+    for punto in [(4, 4), (1276, 716), (640, 360)]:
+        assert imagen_final.getpixel(punto) == (233, 40, 39), (
+            f"en {punto} se ve {imagen_final.getpixel(punto)}: el marco no llego al armado"
+        )
+
+    # Y el marco esta en el overlay, no en la base: nunca pasaria por un modelo.
+    base = logged_in.get(f"/episodes/{episode_id}/assembly/file", params={"variant": "base"})
+    assert Image.open(io.BytesIO(base.content)).getpixel((4, 4)) != (233, 40, 39)
+
+    # Lo mismo por script: el armado por HTTP no es otro armado.
+    rutas = {}
+    for role, photo_id in fotos.items():
+        photo = library.get_photo(db, user_id=_mi_id(logged_in), photo_id=photo_id)
+        rutas[role] = [intake.path(settings, library.resolve_media(db, settings, photo))]
+    brief = composition.Brief(title="LA VERDAD SOBRE EL CASO", photos=rutas)
+    por_script = composition.compose(brief)
+    assert final.content == por_script.final, "el armado por HTTP difiere del armado por script"
+
+
+def _mi_id(client) -> str:
+    return client.get("/auth/me").json()["id"]
+
+
+def test_episodes_16_corregir_el_titulo_cambia_lo_que_sirve_esa_url(logged_in, imagen):
+    """El bug que solo se ve en un navegador.
+
+    La URL del armado llevaba `immutable, max-age=1 ano`, pero su contenido
+    cambia al corregir el titulo. El navegador hacia lo correcto -- no volver a
+    pedirla -- y la persona veia la miniatura vieja despues de arreglar la
+    errata. `TestClient` no implementa una cache HTTP, asi que esto se comprueba
+    por el ETag: si el ETag viejo sigue validando, un cliente se queda con la
+    imagen vieja para siempre.
+    """
+    conductor = _foto(logged_in, imagen, "conductor")
+    episode_id = _crear(logged_in, {"conductor": conductor}, title="CON ERRATA").json()["id"]
+    logged_in.post(f"/episodes/{episode_id}/assembly")
+
+    antes = logged_in.get(f"/episodes/{episode_id}/assembly/file")
+    etag_viejo = antes.headers["etag"]
+
+    logged_in.patch(f"/episodes/{episode_id}", json={"title": "SIN ERRATA"})
+    logged_in.post(f"/episodes/{episode_id}/assembly")
+
+    despues = logged_in.get(f"/episodes/{episode_id}/assembly/file")
+    assert despues.content != antes.content, "sirvio el armado viejo"
+    assert despues.headers["etag"] != etag_viejo
+
+    # Y el ETag viejo ya no vale: un cliente que preguntara con el recibe la
+    # imagen nueva, no un 304.
+    con_etag_viejo = logged_in.get(
+        f"/episodes/{episode_id}/assembly/file", headers={"If-None-Match": etag_viejo}
+    )
+    assert con_etag_viejo.status_code == 200, "el ETag viejo sigue validando"

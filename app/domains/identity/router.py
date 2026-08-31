@@ -17,7 +17,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 COOKIE_NAME = "portada_session"
 
 
-def _set_session_cookie(response: Response, request: Request, token: str) -> None:
+def set_session_cookie(response: Response, request: Request, token: str) -> None:
+    """El unico sitio del sistema que sabe como es la cookie de sesion.
+
+    Se exporta por `api.py` para que la pantalla de entrar la ponga llamando
+    aqui, y no copiando las banderas. Copiarlas significaria que el dia que
+    `secure` cambie, un camino se queda con la version insegura en silencio.
+    """
     settings = request.app.state.settings
     response.set_cookie(
         COOKIE_NAME,
@@ -48,7 +54,7 @@ def verify(
     body: VerifyRequest, request: Request, response: Response, db: Db, settings: Config
 ) -> UserOut:
     grant = service.verify_magic_link(db, settings, token=body.token)
-    _set_session_cookie(response, request, grant.token)
+    set_session_cookie(response, request, grant.token)
     user_id_var.set(grant.user_id)
     user = service.load_user(db, grant.user_id)
     assert user is not None
@@ -67,8 +73,13 @@ def me(request: Request, db: Db) -> UserOut:
     return UserOut(id=user.id, email=user.email, created_at=user.created_at)
 
 
+def clear_session_cookie(response: Response) -> None:
+    """El par de `set_session_cookie`. Mismo motivo para vivir aqui."""
+    response.delete_cookie(COOKIE_NAME, path="/")
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(request: Request, response: Response, db: Db) -> Response:
     service.logout(db, request.cookies.get(COOKIE_NAME))
-    response.delete_cookie(COOKIE_NAME, path="/")
+    clear_session_cookie(response)
     return Response(status_code=status.HTTP_204_NO_CONTENT, headers=response.headers)

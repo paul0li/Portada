@@ -26,6 +26,12 @@ ALLOWED: dict[str, set[str]] = {
     "library": {"intake", "processing"},
     "finishing": {"intake"},
     "episodes": {"library", "composition", "intake", "finishing"},
+    # `web` es una hoja: nadie la importa. Es la unica que puede depender de
+    # `identity`, y solo porque DIBUJA la pantalla de entrar -- pedirle que no
+    # sepa que existe un magic link seria pedirle que dibuje un formulario sin
+    # saber de que es. Los dominios de NEGOCIO siguen sin poder, que es lo que
+    # protegia la regla.
+    "web": {"identity", "library", "episodes"},
 }
 
 

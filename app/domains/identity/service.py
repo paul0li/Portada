@@ -116,7 +116,15 @@ def request_magic_link(
 
     # El correo se manda FUERA de la transaccion: SMTP puede tardar segundos y
     # una transaccion abierta bloquea al unico escritor de SQLite.
-    link = f"{settings.public_url}/auth/verify?token={quote(token)}"
+    # Apunta a una PAGINA, no a `/auth/verify`, que solo acepta POST -- abrir el
+    # enlace daba 405 y nadie lo vio, porque los tests extraian el token y lo
+    # posteaban en vez de abrir el enlace, que es lo unico que hace una persona.
+    #
+    # Y sigue sin haber un GET que canjee: la pagina pinta el token en un campo y
+    # hace falta pulsar el boton. Asi ningun GET cambia estado -- que es lo que
+    # hace que `samesite=lax` baste como defensa CSRF -- y un escaner de enlaces
+    # corporativo no gasta el token de un solo uso antes de que lo abras.
+    link = f"{settings.public_url}/entrar?token={quote(token)}"
     sender.send(
         email_mod.magic_link_message(
             to=email, link=link, ttl_minutes=settings.magic_link_ttl_minutes

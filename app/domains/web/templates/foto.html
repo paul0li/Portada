@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titulo %}{{ foto.etiqueta }} · Portada{% endblock %}
+
+{% block cabecera %}
+<header class="cabecera">
+  <a class="volver" href="/libreria?role={{ foto.role }}">‹ {{ etiquetas[foto.role] }}</a>
+  <p class="mono">{{ foto.ancho }}×{{ foto.alto }}</p>
+</header>
+{% endblock %}
+
+{% block contenido %}
+<img class="detalle-imagen" src="{{ foto.url }}" alt="{{ foto.etiqueta }}"
+     width="{{ foto.ancho }}" height="{{ foto.alto }}">
+
+<div class="tarjeta">
+  <p class="rotulo">{{ etiquetas[foto.role] }}</p>
+  <h2>{{ foto.etiqueta }}</h2>
+  {% if foto.descripcion %}<p>{{ foto.descripcion }}</p>{% endif %}
+</div>
+
+{# SPEC §11.11: el segundo paso. Este formulario no existe en la grilla, así que
+   no hay forma de borrar de un toque desde una pantalla llena de miniaturas. #}
+<form method="post" action="/libreria/fotos/{{ foto.id }}/borrar">
+  <button class="boton peligro" type="submit">Eliminar de la librería</button>
+</form>
+<p class="mono">Los episodios que ya la usaron la conservan.</p>
+{% endblock %}

@@ -17,7 +17,8 @@ SPEC 15.1 con un script y fotos reales, sin levantar nada.
 
 import hashlib
 import io
-from collections.abc import Mapping, Sequence
+from collections import OrderedDict
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,12 +26,20 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 from app.domains.composition import fonts, typography
 from app.domains.composition.template import (
+    BASE_ROLES,
     TEMPLATE,
     BackgroundTreatment,
     Palette,
     Slot,
     Template,
 )
+
+# El preview se sirve a la mitad de lado -- un cuarto de pixeles -- y en JPEG.
+# No es otra composicion: es LA composicion, reducida. Un PNG de 1280 cuesta
+# ~49 ms de codificacion y ~750 KB; este JPEG cuesta ~10 ms y ~60 KB, que es la
+# diferencia entre un preview que sigue al dedo y uno que llega tarde.
+PREVIEW_SIZE = (640, 360)
+PREVIEW_QUALITY = 82
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,7 +223,9 @@ def _draw_base(brief: Brief, template: Template) -> Image.Image:
     else:
         canvas.alpha_composite(_gradient(template.canvas, template.palette))
 
-    for role in ("objeto", "invitado", "conductor"):
+    for role in BASE_ROLES:
+        if role == "fondo":
+            continue  # ya esta puesto, y no es un recorte
         slot = template.slots[role]
         for index, path in enumerate(brief.for_role(role)[: slot.max_items]):
             # Se recorta al sujeto ANTES de escalar: el slot mide la persona.
@@ -256,6 +267,66 @@ def _draw_overlay(canvas: Image.Image, brief: Brief, template: Template):
     return puesto
 
 
+class CacheDeBases:
+    """Las ultimas bases dibujadas, en memoria.
+
+    Existe por una sola razon: dibujar la base cuesta ~215 ms y repintar el
+    overlay cuesta ~21 ms. Sin esto, escribir el titulo con el preview delante
+    recompondria el fondo, los recortes y la vineta en cada tecla.
+
+    Es explicita y no un `@lru_cache` a proposito: asi se puede vaciar en un
+    test y se puede MIRAR si hubo acierto, que es lo que hace comprobable a
+    COMPOSITION-22 en vez de una intencion.
+
+    La clave es el checksum de la base, que se calcula con los NOMBRES de los
+    archivos. Funciona por lo mismo que `brief_checksum`: los medios se
+    direccionan por contenido, asi que el nombre de un archivo ya es el hash de
+    lo que contiene. Fuera de esa regla -- un archivo que cambia sin cambiar de
+    nombre -- esta cache serviria pixeles viejos.
+    """
+
+    def __init__(self, maxsize: int = 8) -> None:
+        # Una base RGBA de 1280x720 son ~3,7 MB: ocho caben de sobra en la
+        # unica instancia que hay, y no hay una novena que valga la pena.
+        self.maxsize = maxsize
+        # Cuantas veces hubo que componer de verdad, EN TODA LA VIDA del
+        # proceso: solo sube, y `clear` no lo toca. Si se reseteara, vaciar la
+        # cache seria invisible para quien vigila los aciertos -- y un `clear`
+        # de mas escondido en una ruta es justo el bug que hay que poder ver.
+        # Quien mida, mide diferencias.
+        self.dibujadas = 0
+        self._entradas: OrderedDict[str, Image.Image] = OrderedDict()
+
+    def clear(self) -> None:
+        """Vacia las bases guardadas. No toca el contador (ver arriba)."""
+        self._entradas.clear()
+
+    def __len__(self) -> int:
+        return len(self._entradas)
+
+    def obtener(self, clave: str, dibujar: Callable[[], Image.Image]) -> Image.Image:
+        """La base de esa clave. Devuelve una COPIA: quien la recibe la pinta."""
+        guardada = self._entradas.get(clave)
+        if guardada is None:
+            guardada = dibujar()
+            self.dibujadas += 1
+            self._entradas[clave] = guardada
+            while len(self._entradas) > self.maxsize:
+                self._entradas.popitem(last=False)
+        else:
+            self._entradas.move_to_end(clave)
+        return guardada.copy()
+
+
+BASES = CacheDeBases()
+
+
+def _to_jpeg(img: Image.Image, quality: int = PREVIEW_QUALITY) -> bytes:
+    buffer = io.BytesIO()
+    img.convert("RGB").save(buffer, format="JPEG", quality=quality, optimize=False)
+    return buffer.getvalue()
+
+
 def _to_png(img: Image.Image) -> bytes:
     buffer = io.BytesIO()
     # `optimize=False`: comprimir mas cuesta ~150ms y el PNG no se archiva, se
@@ -265,8 +336,19 @@ def _to_png(img: Image.Image) -> bytes:
 
 
 def compose(brief: Brief, template: Template = TEMPLATE) -> Composition:
-    """Arma la miniatura. Determinista: mismo brief, mismos bytes."""
-    base = _draw_base(brief, template)
+    """Arma la miniatura. Determinista: mismo brief, mismos bytes.
+
+    La base sale de la cache igual que en `preview`, y por el mismo motivo: es
+    lo que hace que SPEC 7 paso 3 -- "corregir una errata no cuesta una
+    regeneracion" -- sea cierto tambien para el armado final, y no solo para el
+    preview. Sin esto, cambiar una letra del titulo recomponia el fondo, los
+    recortes y la vineta: ~215 ms para volver a dibujar exactamente lo mismo.
+
+    Sigue siendo determinista: la cache guarda la MISMA imagen que dibujaria
+    `_draw_base`, y `obtener` devuelve una copia, asi que nadie puede
+    contaminarla.
+    """
+    base = BASES.obtener(base_checksum(brief, template), lambda: _draw_base(brief, template))
     final = base.copy()
     puesto = _draw_overlay(final, brief, template)
 
@@ -292,6 +374,44 @@ def reapply(base_png: bytes, brief: Brief, template: Template = TEMPLATE) -> byt
         canvas = _cover_fit(canvas, template.canvas)
     _draw_overlay(canvas, brief, template)
     return _to_png(canvas)
+
+
+def preview(brief: Brief, template: Template = TEMPLATE) -> bytes:
+    """La miniatura en pequeno y en JPEG, para el preview en vivo (SPEC 8.4).
+
+    NO es otra implementacion del template: dibuja exactamente lo mismo que
+    `compose` y despues lo reduce. Si fuera otra, «el layout vive en un archivo»
+    dejaria de ser cierto y las dos se irian separando sin que nada fallara.
+
+    Lo unico que cambia es lo caro: la base se reusa de la cache cuando solo
+    cambio el titulo, y sale JPEG en vez de PNG.
+    """
+    canvas = BASES.obtener(base_checksum(brief, template), lambda: _draw_base(brief, template))
+    _draw_overlay(canvas, brief, template)
+    return _to_jpeg(canvas.resize(PREVIEW_SIZE, Image.LANCZOS))
+
+
+def _huella_de_fotos(digest, brief: Brief, roles) -> None:
+    for role in sorted(roles):
+        rutas = brief.photos.get(role)
+        if not rutas:
+            continue
+        nombres = sorted(Path(p).name for p in rutas)
+        digest.update(f"\n{role}={','.join(nombres)}".encode())
+
+
+def base_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
+    """Identifica la BASE: lo que hay debajo del logo, el marco y el titulo.
+
+    Los tres son overlay (SPEC 7), asi que cambiarlos no invalida lo de abajo.
+    Ese es el motivo entero de que el preview en vivo sea barato, y es una
+    propiedad que ya existia -- se construyo para que el modelo recibiera la
+    base sin logo ni titulo, y resulta que sirve para lo mismo aqui.
+    """
+    digest = hashlib.sha256()
+    digest.update(f"base:v{template.version}\n".encode())
+    _huella_de_fotos(digest, brief, BASE_ROLES)
+    return digest.hexdigest()
 
 
 def brief_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
