@@ -11,7 +11,12 @@ from app.domains.intake import api as intake
 
 router = APIRouter(prefix="/episodes", tags=["episodes"])
 
-CACHE_CONTROL = "public, max-age=31536000, immutable"
+# Ver la nota larga en `library/router.py`: esta URL sirve EL ULTIMO armado del
+# episodio, y corregir el titulo produce otro. Con `immutable` el navegador hacia
+# lo correcto -- no volver a pedirla en un ano -- y la persona veia la miniatura
+# vieja despues de arreglar una errata. Solo se ve en un navegador de verdad:
+# `TestClient` no implementa una cache HTTP.
+CACHE_CONTROL = "private, no-cache"
 
 
 def _assembly_out(assembly: repo.Assembly | None) -> AssemblyOut | None:

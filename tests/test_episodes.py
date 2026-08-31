@@ -183,7 +183,11 @@ def test_episodes_13_el_armado_se_descarga_con_etag(logged_in, imagen):
 
     primera = logged_in.get(f"/episodes/{episode_id}/assembly/file")
     etag = primera.headers["etag"]
-    assert "immutable" in primera.headers["cache-control"]
+    cache = primera.headers["cache-control"]
+    # Esta URL sirve EL ULTIMO armado, y corregir el titulo produce otro.
+    assert "immutable" not in cache, "promete que nunca cambia, y cambia"
+    assert "no-cache" in cache
+    assert "public" not in cache
 
     repetida = logged_in.get(
         f"/episodes/{episode_id}/assembly/file", headers={"If-None-Match": etag}
@@ -255,3 +259,35 @@ def test_episodes_15_un_episodio_con_marco_lo_lleva_hasta_los_pixeles(
 
 def _mi_id(client) -> str:
     return client.get("/auth/me").json()["id"]
+
+
+def test_episodes_16_corregir_el_titulo_cambia_lo_que_sirve_esa_url(logged_in, imagen):
+    """El bug que solo se ve en un navegador.
+
+    La URL del armado llevaba `immutable, max-age=1 ano`, pero su contenido
+    cambia al corregir el titulo. El navegador hacia lo correcto -- no volver a
+    pedirla -- y la persona veia la miniatura vieja despues de arreglar la
+    errata. `TestClient` no implementa una cache HTTP, asi que esto se comprueba
+    por el ETag: si el ETag viejo sigue validando, un cliente se queda con la
+    imagen vieja para siempre.
+    """
+    conductor = _foto(logged_in, imagen, "conductor")
+    episode_id = _crear(logged_in, {"conductor": conductor}, title="CON ERRATA").json()["id"]
+    logged_in.post(f"/episodes/{episode_id}/assembly")
+
+    antes = logged_in.get(f"/episodes/{episode_id}/assembly/file")
+    etag_viejo = antes.headers["etag"]
+
+    logged_in.patch(f"/episodes/{episode_id}", json={"title": "SIN ERRATA"})
+    logged_in.post(f"/episodes/{episode_id}/assembly")
+
+    despues = logged_in.get(f"/episodes/{episode_id}/assembly/file")
+    assert despues.content != antes.content, "sirvio el armado viejo"
+    assert despues.headers["etag"] != etag_viejo
+
+    # Y el ETag viejo ya no vale: un cliente que preguntara con el recibe la
+    # imagen nueva, no un 304.
+    con_etag_viejo = logged_in.get(
+        f"/episodes/{episode_id}/assembly/file", headers={"If-None-Match": etag_viejo}
+    )
+    assert con_etag_viejo.status_code == 200, "el ETag viejo sigue validando"

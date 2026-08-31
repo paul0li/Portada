@@ -120,15 +120,23 @@ def test_library_09_la_foto_de_otro_usuario_da_404_no_403(logged_in, imagen):
     assert respuesta.json()["error"]["code"] == "LIBRARY_PHOTO_NOT_FOUND"
 
 
-def test_library_10_el_archivo_viene_con_etag_inmutable(logged_in, imagen):
+def test_library_10_el_archivo_viene_con_etag_y_se_revalida(logged_in, imagen):
+    """La URL es un PUNTERO, no el archivo: sirve el recorte si esta listo y si
+    no el original. Marcarla `immutable` es prometer que nunca cambia, y no es
+    verdad -- el dia que el recorte se calcule en segundo plano, cambia."""
     photo_id = _subir(logged_in, imagen).json()["id"]
 
     respuesta = logged_in.get(f"/photos/{photo_id}/file")
     assert respuesta.status_code == 200
     assert respuesta.headers["content-type"] == "image/png"
     assert respuesta.headers["etag"]
-    assert "immutable" in respuesta.headers["cache-control"]
     assert len(respuesta.content) > 0
+
+    cache = respuesta.headers["cache-control"]
+    assert "immutable" not in cache, "promete que nunca cambia, y puede cambiar"
+    assert "no-cache" in cache, "sin revalidar, un cliente sirve la version vieja"
+    # `private`: la respuesta depende de la cookie.
+    assert "public" not in cache
 
 
 def test_library_11_con_el_mismo_etag_devuelve_304(logged_in, imagen):

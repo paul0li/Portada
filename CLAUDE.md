@@ -5,10 +5,20 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 
 ## Outcome actual
 
-**Fase 3 del frontend — el preview se actualiza en cada toque (SPEC §8.4).** La
-miniatura va fijada sobre cada paso y se repinta al elegir una foto y al teclear
-el título. Armar deja de ser una revelación: para cuando se escribe el título ya
-se vio el resultado. **174 tests.**
+**El frontend está terminado: Portada se usa de punta a punta.** Inicio con el
+punto de entrada y los recientes, la librería, el flujo de cinco pasos con el
+preview en vivo, el resultado descargable y el historial. Desde el teléfono, en
+la LAN, sin nube. **182 tests.**
+
+Corregir una errata cuesta **89 ms y no 287**: el título es *overlay*, así que se
+pega sobre la misma base, que sigue en la caché (SPEC §7③). Eso valía para el
+preview desde la fase 3, y ahora vale también para el armado final.
+
+<details><summary>Fase 3 — el preview se actualiza en cada toque (SPEC §8.4)</summary>
+
+La miniatura va fijada sobre cada paso y se repinta al elegir una foto y al
+teclear el título. Armar deja de ser una revelación: para cuando se escribe el
+título ya se vio el resultado.
 
 Y la decisión de `CLAUDE.md` que decía que «el backend renderiza» se revertiría
 si hiciera falta esto **se queda**, porque la pieza que lo abarata ya estaba
@@ -19,6 +29,8 @@ construida: la separación `base`/`final` de SPEC §7. Medido:
 | repintar por el título (base en caché) | **24 ms** |
 | primera vez, sin caché | 247 ms |
 | peso: preview JPEG 640×360 vs PNG final | 71 KB vs 255 KB |
+
+</details>
 
 <details><summary>Fase 2 — hago una miniatura y la descargo</summary>
 
@@ -234,6 +246,8 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-28 | **La tipografía se resuelve en cadena** (repo → sistema → error) | Las fuentes del sistema sirven para trabajar pero no son redistribuibles. Fallar con la fuente de mapa de bits de Pillow sería peor que fallar | Ya no: hay una fuente libre en el repo. La cadena queda como red, no como camino |
 | 2026-08-30 | **Anton en el repo**, no Impact | Impact es de Microsoft: no se puede redistribuir, y en Linux no existe. Anton es su equivalente libre (SIL OFL) | Comprar una licencia de la tipografía real del show |
 | 2026-08-30 | **El título se ancla a la línea base**, no a la ascendente | La ascendente la elige cada tipografía a su gusto; anclar a ella hacía que `bottom=500` significara una altura distinta según la fuente | Nada: la línea base es lo que «se apoya en y=500» quiere decir |
+| 2026-08-31 | **La URL del armado se revalida, no se cachea un año** | Es un PUNTERO al último armado, no un archivo: corregir el título produce otro. Con `immutable` el navegador hacía lo correcto —no volver a pedirla— y la miniatura vieja se quedaba en pantalla. `no-cache` + `ETag` cuesta un 304 (3,4 ms) y nunca miente. Lo mismo en `/photos/{id}/file`, que sirve el recorte si está listo y si no el original | Que las URLs pasen a llevar el hash del contenido. Entonces sí son inmutables y el año vuelve |
+| 2026-08-31 | **El historial es una lista de una columna, no una rejilla de dos** | A 430 px, dos miniaturas 16:9 por línea son 96 px de ancho, y a ese tamaño no se reconoce cuál es cuál — que es lo único que un historial tiene que hacer | Una pantalla ancha de verdad, no un teléfono |
 | 2026-08-31 | **Fuera htmx: HTML del servidor y ~15 líneas de JS** | Se vendorizó en la fase 1 y al terminar la 3 no lo usaba ni un atributo: todo son formularios y enlaces. Lo único que una navegación no puede hacer es repintar mientras se teclea, y eso son 15 líneas. 50 KB de dependencia para eso es peor que no tenerla | Que aparezcan muchos intercambios parciales — el A/B del resultado, reordenar objetos. Con tres o cuatro, htmx vuelve y se nota |
 | 2026-08-31 | **El preview no escribe nada**: ni fila, ni archivo | El episodio se crea al confirmar, no al mirar. Si el preview creara episodios, el historial se llenaría de borradores de gente que solo estaba probando | Nada |
 | 2026-08-31 | **Una caché de bases en memoria, explícita y no un `@lru_cache`** | Dibujar la base cuesta ~215 ms y repintar el overlay ~21 ms; sin caché, teclear recompondría el fondo y los recortes en cada tecla. Explícita porque así se puede vaciar en un test y se puede MIRAR si hubo acierto — que es lo que hace comprobable a `COMPOSITION-22` en vez de una intención | Más de una instancia. Entonces la caché o se comparte o se acepta que cada proceso tenga la suya |
@@ -286,6 +300,19 @@ vuelvan a morder en la próxima.
   record ni se construye, así que el error **queda dormido hasta producción** —
   nos tumbó el arranque del servidor con los tests en verde. Dos defensas: los
   tests corren en DEBUG, y `CORE-13` lo caza estáticamente en todo `app/`.
+- **Un `ETag` correcto no salva a un `Cache-Control` que miente.** La URL del
+  armado llevaba `immutable, max-age=1 año` siendo un puntero al *último*
+  armado. Al corregir una errata el backend hacía todo bien —nuevo armado, nuevo
+  ETag— y el navegador seguía enseñando la miniatura vieja, porque `immutable`
+  le dice justamente que no pregunte. **Ningún test de la API podía verlo:**
+  `TestClient` no implementa una caché HTTP. Salió de corregir un título en un
+  navegador de verdad. Corolario: una cabecera de caché es una promesa sobre el
+  futuro, y hay que comprobar que la URL puede cumplirla.
+- **Un contador que se resetea no sirve para vigilar nada.** `CacheDeBases.clear()`
+  ponía `dibujadas = 0`, así que un `clear()` escondido dentro de una ruta era
+  invisible: el test comparaba dos ceros. Ahora el contador solo sube y quien
+  mide, mide diferencias. Lo mismo de siempre: si dos situaciones distintas dan
+  el mismo número, un test no puede distinguirlas.
 - **Un guardia de propiedad puede no poder fallar.** `WEB-24` comprobaba que el
   preview de una foto ajena no se sirve, y pasaba aunque se quitara la
   comprobación de sesión: sin sesión y con la foto de otro **daban la misma

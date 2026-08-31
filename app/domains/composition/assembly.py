@@ -289,12 +289,17 @@ class CacheDeBases:
         # Una base RGBA de 1280x720 son ~3,7 MB: ocho caben de sobra en la
         # unica instancia que hay, y no hay una novena que valga la pena.
         self.maxsize = maxsize
-        self.dibujadas = 0  # cuantas veces hubo que componer de verdad
+        # Cuantas veces hubo que componer de verdad, EN TODA LA VIDA del
+        # proceso: solo sube, y `clear` no lo toca. Si se reseteara, vaciar la
+        # cache seria invisible para quien vigila los aciertos -- y un `clear`
+        # de mas escondido en una ruta es justo el bug que hay que poder ver.
+        # Quien mida, mide diferencias.
+        self.dibujadas = 0
         self._entradas: OrderedDict[str, Image.Image] = OrderedDict()
 
     def clear(self) -> None:
+        """Vacia las bases guardadas. No toca el contador (ver arriba)."""
         self._entradas.clear()
-        self.dibujadas = 0
 
     def __len__(self) -> int:
         return len(self._entradas)
@@ -331,8 +336,19 @@ def _to_png(img: Image.Image) -> bytes:
 
 
 def compose(brief: Brief, template: Template = TEMPLATE) -> Composition:
-    """Arma la miniatura. Determinista: mismo brief, mismos bytes."""
-    base = _draw_base(brief, template)
+    """Arma la miniatura. Determinista: mismo brief, mismos bytes.
+
+    La base sale de la cache igual que en `preview`, y por el mismo motivo: es
+    lo que hace que SPEC 7 paso 3 -- "corregir una errata no cuesta una
+    regeneracion" -- sea cierto tambien para el armado final, y no solo para el
+    preview. Sin esto, cambiar una letra del titulo recomponia el fondo, los
+    recortes y la vineta: ~215 ms para volver a dibujar exactamente lo mismo.
+
+    Sigue siendo determinista: la cache guarda la MISMA imagen que dibujaria
+    `_draw_base`, y `obtener` devuelve una copia, asi que nadie puede
+    contaminarla.
+    """
+    base = BASES.obtener(base_checksum(brief, template), lambda: _draw_base(brief, template))
     final = base.copy()
     puesto = _draw_overlay(final, brief, template)
 

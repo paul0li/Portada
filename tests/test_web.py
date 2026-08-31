@@ -319,15 +319,32 @@ def test_web_16_la_marca_va_puesta_sin_pedirla(client, imagen):
 
 
 def test_web_17_el_titulo_llega_al_armado(client, imagen):
+    """Llega a los PIXELES, no solo a la pantalla.
+
+    La primera version de este test buscaba el titulo en mayusculas dentro del
+    HTML del resultado, y eso solo probaba que la UI lo repetia -- se rompio al
+    dejar de repetirlo, sin que nada del producto cambiara. Lo que hay que
+    comprobar es que dos titulos distintos dan dos miniaturas distintas.
+    """
     _entrar(client)
     ids = _libreria_completa(client, imagen)
 
-    creado = _armar(client, {"conductor": ids["conductor"]}, title="nadie esperaba esta respuesta")
-    episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+    def _armado(title):
+        creado = _armar(client, {"conductor": ids["conductor"]}, title=title)
+        episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+        return (
+            client.get(f"/episodes/{episode_id}").json()["title"],
+            client.get(f"/episodes/{episode_id}/assembly/file").content,
+            client.get(creado.headers["location"]).text,
+        )
 
-    assert client.get(f"/episodes/{episode_id}").json()["title"] == "nadie esperaba esta respuesta"
-    # Y sale en mayusculas sobre la miniatura: lo pone `composition`, no la UI.
-    assert "NADIE ESPERABA ESTA RESPUESTA" in client.get(creado.headers["location"]).text
+    guardado, png, pagina = _armado("nadie esperaba esta respuesta")
+    _, otro_png, _ = _armado("otra cosa completamente distinta")
+
+    assert guardado == "nadie esperaba esta respuesta", "el titulo se transformo por el camino"
+    assert png != otro_png, "el titulo no llega a la miniatura"
+    # Y la pantalla lo ensena tal cual se escribio, para poder corregirlo.
+    assert "nadie esperaba esta respuesta" in pagina
 
 
 def test_web_18_la_intensidad_es_la_unica_perilla(client, imagen):
@@ -514,3 +531,122 @@ def test_web_25_si_el_preview_falla_la_pantalla_no_se_rompe(client, imagen):
     assert paso.status_code == 200
     assert 'id="preview"' in paso.text
     assert "onerror" in paso.text, "un preview roto dejaria el icono de imagen partida"
+
+
+# --- inicio e historial --------------------------------------------------
+
+
+def _un_episodio(client, imagen, title="LA VERDAD SOBRE EL CASO"):
+    ids = _libreria_completa(client, imagen)
+    creado = _armar(client, {"conductor": ids["conductor"]}, title=title)
+    assert creado.status_code in (302, 303), creado.text[:300]
+    return creado.headers["location"].rsplit("/", 1)[-1], ids
+
+
+def test_web_26_inicio_ofrece_empezar_una_miniatura(client, imagen):
+    _entrar(client)
+
+    inicio = client.get("/")
+
+    assert inicio.status_code == 200
+    assert 'href="/nueva"' in inicio.text, "no hay por donde empezar el trabajo de la semana"
+
+
+def test_web_27_inicio_muestra_los_recientes_y_la_libreria(client, imagen):
+    _entrar(client)
+    episode_id, _ = _un_episodio(client, imagen, title="SE FUE DE LA ENTREVISTA")
+
+    inicio = client.get("/").text
+
+    assert "SE FUE DE LA ENTREVISTA" in inicio
+    assert f"/episodios/{episode_id}" in inicio
+    # Con su miniatura, no solo el titulo: un historial sin imagenes no sirve
+    # para encontrar nada.
+    assert f"/episodes/{episode_id}/assembly/file" in inicio
+    assert "Librería" in inicio
+
+
+def test_web_28_el_historial_va_del_mas_reciente_al_mas_antiguo(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    for title in ("EL PRIMERO", "EL SEGUNDO", "EL TERCERO"):
+        _armar(client, {"conductor": ids["conductor"]}, title=title)
+
+    historial = client.get("/episodios").text
+    posiciones = [historial.index(t) for t in ("EL TERCERO", "EL SEGUNDO", "EL PRIMERO")]
+    assert posiciones == sorted(posiciones), "el historial no esta del mas reciente al mas antiguo"
+
+    # Y solo los mios.
+    client.post("/salir")
+    _entrar(client, OTRO_EMAIL)
+    for title in ("EL PRIMERO", "EL SEGUNDO", "EL TERCERO"):
+        assert title not in client.get("/episodios").text
+
+
+def test_web_29_sin_episodios_inicio_lo_dice(client, imagen):
+    _entrar(client)
+
+    inicio = client.get("/")
+
+    assert inicio.status_code == 200
+    # Se comprueba el bloque, no la frase: un test que fija la redaccion se
+    # rompe al corregir una tilde y no dice nada del comportamiento.
+    assert 'class="vacio"' in inicio.text, (
+        "una pantalla vacia sin explicacion parece una pantalla rota"
+    )
+    assert "/episodios/" not in inicio.text, "listo un episodio que no existe"
+
+
+# --- corregir el titulo --------------------------------------------------
+
+
+def test_web_30_puedo_corregir_el_titulo(client, imagen):
+    _entrar(client)
+    episode_id, _ = _un_episodio(client, imagen, title="LA VERDAD SOBER EL CASO")
+
+    corregido = client.post(
+        f"/episodios/{episode_id}/titulo",
+        data={"title": "LA VERDAD SOBRE EL CASO"},
+        follow_redirects=False,
+    )
+
+    assert corregido.status_code in (302, 303), corregido.text[:300]
+    resultado = client.get(f"/episodios/{episode_id}")
+    assert "LA VERDAD SOBRE EL CASO" in resultado.text
+    assert "SOBER" not in resultado.text
+    assert client.get(f"/episodes/{episode_id}").json()["title"] == "LA VERDAD SOBRE EL CASO"
+
+
+def test_web_31_corregir_el_titulo_reusa_la_base(client, imagen):
+    """SPEC 7 paso 3: el titulo se vuelve a componer sobre la MISMA base, asi que
+    una errata no cuesta una regeneracion. Es la propiedad que hace que el
+    producto tolere equivocarse, y sin este test es solo una intencion."""
+    from app.domains.composition import api as composition
+
+    _entrar(client)
+    episode_id, _ = _un_episodio(client, imagen, title="CON ERRATA")
+
+    composition.BASES.clear()
+    client.post(f"/episodios/{episode_id}/titulo", data={"title": "SIN ERRATA"})
+    dibujadas = composition.BASES.dibujadas
+
+    client.post(f"/episodios/{episode_id}/titulo", data={"title": "OTRA VEZ DISTINTO"})
+
+    assert composition.BASES.dibujadas == dibujadas, "recompuso la base por un titulo"
+    assert "OTRA VEZ DISTINTO" in client.get(f"/episodios/{episode_id}").text
+
+
+def test_web_32_no_puedo_tocar_el_episodio_de_otro(client, imagen):
+    _entrar(client)
+    episode_id, _ = _un_episodio(client, imagen, title="MI EPISODIO")
+    client.post("/salir")
+    _entrar(client, OTRO_EMAIL)
+
+    ajeno = client.post(
+        f"/episodios/{episode_id}/titulo",
+        data={"title": "SECUESTRADO"},
+        follow_redirects=False,
+    )
+
+    assert ajeno.status_code not in (302, 303), "dejo cambiar el titulo de otra persona"
+    assert client.get(f"/episodios/{episode_id}", follow_redirects=False).status_code == 404

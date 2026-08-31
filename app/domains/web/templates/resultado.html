@@ -12,14 +12,19 @@
 <img class="miniatura-final" src="/episodes/{{ episode.id }}/assembly/file"
      alt="{{ episode.title }}" width="1280" height="720">
 
-<div>
-  <p class="rotulo">Título</p>
-  <p class="titulo-episodio">{{ episode.title|upper }}</p>
-</div>
+{# Corregir la errata aquí mismo, sin volver a recorrer el flujo. Cuesta ~24 ms
+   porque el título es overlay: se pega sobre la misma base (SPEC §7③). #}
+<form method="post" action="/episodios/{{ episode.id }}/titulo" class="tarjeta">
+  <label>
+    <span class="rotulo">Título</span>
+    <textarea name="title" rows="2" required>{{ episode.title }}</textarea>
+  </label>
+  <button class="boton secundario" type="submit">Corregir el título</button>
+</form>
 
 <div class="acciones">
   <a class="boton" href="/episodes/{{ episode.id }}/assembly/file" download>Descargar</a>
-  <a class="boton secundario" href="{{ editar }}">Editar</a>
+  <a class="boton secundario" href="{{ editar }}">Cambiar fotos</a>
 </div>
 
 <div class="tarjeta">

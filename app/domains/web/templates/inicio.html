@@ -14,6 +14,39 @@
 {% endblock %}
 
 {% block contenido %}
+{# Lo primero y lo más grande: es el trabajo de la semana, y todo lo demás de
+   esta pantalla es consulta. #}
+<a class="boton entrada" href="/nueva">
+  <span class="mas-grande" aria-hidden="true">+</span>
+  <span>
+    Nueva miniatura
+    <small>5 pasos · unos dos minutos</small>
+  </span>
+</a>
+
+{% if recientes %}
+  <section>
+    <div class="entre">
+      <p class="rotulo">Recientes</p>
+      <a class="ver-todas" href="/episodios">Ver todas</a>
+    </div>
+    <div class="lista-episodios">
+      {% for ep in recientes %}
+        {% include "_episodio.html" %}
+      {% endfor %}
+    </div>
+  </section>
+{% else %}
+  <p class="vacio">
+    Todavía no has hecho ninguna miniatura.
+    {% if stats.get("conductor") %}
+      Empieza por la primera.
+    {% else %}
+      Sube una foto de conductor a tu <a href="/libreria?role=conductor">librería</a> y empieza.
+    {% endif %}
+  </p>
+{% endif %}
+
 <a class="tarjeta enlace-tarjeta" href="/libreria">
   <div class="entre">
     <p class="rotulo">Librería</p>
@@ -28,9 +61,4 @@
     {% endfor %}
   </div>
 </a>
-
-<p>Sube tus fotos una vez y reúsalas todo el año. Etiquetar una foto es decirle
-   a Portada qué lugar ocupa en la miniatura.</p>
-
-<p class="vacio">La miniatura llega en la próxima fase.</p>
 {% endblock %}

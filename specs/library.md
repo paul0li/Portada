@@ -17,7 +17,7 @@ se etiqueta una vez y se reusa durante un año.
 - **LIBRARY-07** — listar devuelve solo mis fotos, nunca las de otro usuario.
 - **LIBRARY-08** — filtrar por rol devuelve solo ese rol.
 - **LIBRARY-09** — pedir la foto de otro usuario devuelve 404, no 403: un 403 confirmaría que existe.
-- **LIBRARY-10** — descargar el archivo devuelve la imagen con `ETag` y `Cache-Control: immutable`.
+- **LIBRARY-10** — descargar el archivo devuelve la imagen con `ETag`, y se revalida en vez de cachearse un año: esa URL es un puntero —sirve el recorte si está listo y si no el original— así que su contenido puede cambiar.
 - **LIBRARY-11** — volver a pedirla con el mismo `ETag` devuelve 304 sin cuerpo.
 
 ## Borrar

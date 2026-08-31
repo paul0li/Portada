@@ -57,6 +57,26 @@ ya se ha visto el resultado.
 - **WEB-24** — el preview de una foto que no es mía no se puede pedir, ni con la sesión de otra persona ni sin sesión.
 - **WEB-25** — si el preview falla, la pantalla no se queda en blanco ni enseña un error crudo (SPEC §11.4 llevado a la UI).
 
+## Inicio e historial
+
+La pantalla de inicio de SPEC §9: el punto de entrada al trabajo de la semana,
+los episodios recientes y el tamaño de la librería.
+
+- **WEB-26** — inicio ofrece empezar una miniatura nueva, y es lo primero que se ve.
+- **WEB-27** — inicio muestra los episodios recientes con su miniatura, y el tamaño de la librería.
+- **WEB-28** — el historial lista mis episodios del más reciente al más antiguo, y solo los míos.
+- **WEB-29** — sin ningún episodio, inicio lo dice en vez de enseñar un hueco vacío.
+
+## Corregir el título
+
+SPEC §7③: el título se vuelve a componer sobre la misma base, así que corregir
+una errata no cuesta una regeneración. Es la propiedad que hace que el producto
+tolere equivocarse.
+
+- **WEB-30** — puedo corregir el título de un episodio ya armado y la miniatura sale con el título nuevo.
+- **WEB-31** — corregir el título reusa la base en vez de recomponerla: la errata sale gratis (SPEC §7③).
+- **WEB-32** — no puedo tocar el episodio de otra persona.
+
 ## La forma de las páginas
 
 - **WEB-10** — toda página privada se sirve con `Cache-Control: no-store`: nada de lo que hay dentro es de nadie más.

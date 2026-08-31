@@ -1,0 +1,8 @@
+{# Una fila del historial: la miniatura manda, el título acompaña. #}
+<a class="fila-episodio" href="/episodios/{{ ep.id }}">
+  <img src="{{ ep.url }}" alt="" width="1280" height="720" loading="lazy">
+  <span class="fila-texto">
+    <span class="fila-titulo">{{ ep.titulo or "Sin título" }}</span>
+    <span class="mono">{{ ep.creado }}</span>
+  </span>
+</a>

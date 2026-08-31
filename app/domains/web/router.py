@@ -184,6 +184,40 @@ def _url_preview(seleccion: dict[str, list[str]], title: str = "") -> str:
     return "/nueva/preview.jpg?" + urlencode([*_pares(seleccion), ("title", title)])
 
 
+def _tarjeta_episodio(episode) -> dict:
+    """Un episodio listo para pintar en una grilla."""
+    return {
+        "id": episode.id,
+        "titulo": episode.title,
+        "creado": episode.created_at[:10],
+        # El armado se sirve por la misma ruta de la API: es inmutable y con
+        # ETag, asi que el navegador lo cachea de verdad entre pantallas.
+        "url": f"/episodes/{episode.id}/assembly/file",
+    }
+
+
+def _recientes(db, user_id: str, tope: int = 3) -> list[dict]:
+    """Los ultimos episodios ARMADOS.
+
+    Uno sin armado no se ensena: su tarjeta seria un hueco. No deberia haberlos
+    -- el flujo arma al confirmar -- pero un episodio creado por la API JSON si
+    puede estar sin armar, y esta pantalla no es quien decide eso.
+    """
+    return [
+        _tarjeta_episodio(episode)
+        for episode in episodes.list_episodes(db, user_id=user_id)
+        if _tiene_armado(db, user_id, episode.id)
+    ][:tope]
+
+
+def _tiene_armado(db, user_id: str, episode_id: str) -> bool:
+    try:
+        episodes.latest_assembly(db, user_id=user_id, episode_id=episode_id)
+    except AppError:
+        return False
+    return True
+
+
 def _marca(db, settings, user_id: str) -> dict[str, dict]:
     """El logo y el marco más recientes. `list_photos` ya ordena por fecha."""
     puesta = {}
@@ -280,8 +314,23 @@ def inicio(request: Request, db: Db, user_id: OptionalUser) -> Response:
             "stats": library.stats(db, user_id=user_id),
             "roles": ORDEN_ROLES,
             "etiquetas": ETIQUETAS,
+            "recientes": _recientes(db, user_id),
         },
     )
+
+
+@router.get("/episodios")
+def historial(request: Request, db: Db, user_id: OptionalUser) -> Response:
+    if user_id is None:
+        return _a_entrar()
+    # `list_episodes` ya ordena del mas reciente al mas antiguo: el orden es del
+    # repo, no de esta pantalla.
+    episodios = [
+        _tarjeta_episodio(e)
+        for e in episodes.list_episodes(db, user_id=user_id)
+        if _tiene_armado(db, user_id, e.id)
+    ]
+    return _pagina(request, "historial.html", {"episodios": episodios})
 
 
 @router.get("/libreria")
@@ -557,8 +606,41 @@ def resultado(
             "armado": armado,
             "usadas": usadas,
             "editar": _url_flujo(1, episode.slots),
+            "preview": _url_preview(episode.slots, episode.title),
         },
     )
+
+
+# `def` y no `async def`: se vuelve a componer con Pillow.
+@router.post("/episodios/{episode_id}/titulo")
+def corregir_titulo(
+    request: Request,
+    db: Db,
+    settings: Config,
+    user_id: OptionalUser,
+    episode_id: str,
+    title: Annotated[str, Form()] = "",
+) -> Response:
+    """Corrige el título y vuelve a componer (SPEC §7③).
+
+    Cuesta ~24 ms y no una regeneración, porque el título es *overlay*: se pega
+    sobre la misma base, que sigue en la caché. Es la propiedad que hace que el
+    producto tolere equivocarse, y `WEB-31` la vigila.
+    """
+    if user_id is None:
+        return _a_entrar()
+    try:
+        episodes.set_title(db, user_id=user_id, episode_id=episode_id, title=title)
+        episodes.build_assembly(
+            db,
+            settings,
+            request.app.state.finisher,
+            user_id=user_id,
+            episode_id=episode_id,
+        )
+    except AppError as error:
+        return _pagina(request, "vacio.html", {"mensaje": _mensaje(error)}, status=error.status)
+    return RedirectResponse(f"/episodios/{episode_id}", status_code=303)
 
 
 @router.post("/libreria/fotos/{photo_id}/borrar")

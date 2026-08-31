@@ -13,9 +13,19 @@ from app.domains.library.schemas import PhotoListOut, PhotoOut
 
 router = APIRouter(prefix="/photos", tags=["library"])
 
-# Los archivos son inmutables: su ruta es el hash de su contenido, asi que un
-# media_id nunca cambia de bytes. Un ano de cache es seguro por construccion.
-CACHE_CONTROL = "public, max-age=31536000, immutable"
+# El ARCHIVO es inmutable -- su ruta en disco es el hash de su contenido -- pero
+# esta URL no es el archivo: es un PUNTERO. `resolve_media` sirve el recorte si
+# esta listo y si no el original, asi que los mismos bytes de URL pueden devolver
+# bytes distintos el dia que el recorte se calcule en segundo plano.
+#
+# `no-cache` no significa "no guardes": significa "guarda, pero pregunta antes de
+# usar". Con el ETag de por medio, preguntar cuesta un 304 -- medido en 3,4 ms --
+# y a cambio nunca se sirve una imagen vieja.
+#
+# `private` y no `public`: la respuesta depende de la cookie, y una cache
+# compartida no debe poder guardar la foto de alguien bajo una URL que otro
+# podria pedir.
+CACHE_CONTROL = "private, no-cache"
 
 
 def _out(photo, media) -> PhotoOut:
