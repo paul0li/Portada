@@ -14,10 +14,18 @@ from app.domains.composition.assembly import (
     preview,
     reapply,
 )
-from app.domains.composition.template import TEMPLATE, TEMPLATE_VERSION, Template
+from app.domains.composition.template import (
+    DEGRADADO_POR_DEFECTO,
+    DEGRADADOS,
+    TEMPLATE,
+    TEMPLATE_VERSION,
+    Template,
+)
 
 __all__ = [
     "BASES",
+    "DEGRADADOS",
+    "DEGRADADO_POR_DEFECTO",
     "TEMPLATE",
     "TEMPLATE_VERSION",
     "Brief",

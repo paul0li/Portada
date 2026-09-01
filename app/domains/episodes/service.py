@@ -79,6 +79,22 @@ def _validate_selection(
     return limpia
 
 
+def _validate_degradado(degradado: str) -> str:
+    """El nombre del fondo por defecto, o 422.
+
+    Se valida aqui y no en `composition`: el armado no puede fallar a mitad de
+    dibujar (SPEC 11.4), asi que abajo un nombre raro cae en el por defecto. El
+    sitio donde un nombre invalido SI es un error es la puerta de entrada, que
+    es esto.
+    """
+    if degradado not in composition.DEGRADADOS:
+        raise errors.SeleccionInvalida(
+            f"Fondo desconocido: {degradado!r}.",
+            details={"valid": list(composition.DEGRADADOS)},
+        )
+    return degradado
+
+
 def create_episode(
     db: Database,
     *,
@@ -86,12 +102,14 @@ def create_episode(
     title: str,
     selection: dict[str, list[str]],
     strength: str = finishing.DEFAULT_STRENGTH,
+    degradado: str = composition.DEGRADADO_POR_DEFECTO,
 ) -> repo.Episode:
     if strength not in finishing.STRENGTHS:
         raise errors.SeleccionInvalida(
             f"Intensidad desconocida: {strength!r}.",
             details={"valid": list(finishing.STRENGTHS)},
         )
+    _validate_degradado(degradado)
     limpia = _validate_selection(db, user_id=user_id, selection=selection)
 
     with db.transaction() as conn:
@@ -100,6 +118,7 @@ def create_episode(
             user_id=user_id,
             title=_normalize_title(title),
             strength=strength,
+            degradado=degradado,
             selection=limpia,
         )
     log.info(
@@ -152,6 +171,7 @@ def _brief_de(
     user_id: str,
     slots: dict[str, list[str]],
     title: str,
+    degradado: str = composition.DEGRADADO_POR_DEFECTO,
     referencia: str = "",
 ) -> composition.Brief:
     """Resuelve una seleccion a rutas de archivo.
@@ -175,7 +195,7 @@ def _brief_de(
             rutas.append(intake.path(settings, media))
         if rutas:
             photos[role] = rutas
-    return composition.Brief(title=title, photos=photos)
+    return composition.Brief(title=title, photos=photos, degradado=degradado)
 
 
 def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> composition.Brief:
@@ -185,6 +205,7 @@ def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> com
         user_id=episode.user_id,
         slots=episode.slots,
         title=episode.title,
+        degradado=episode.degradado,
         referencia=episode.id,
     )
 
@@ -196,6 +217,7 @@ def preview(
     user_id: str,
     selection: dict[str, list[str]],
     title: str,
+    degradado: str = composition.DEGRADADO_POR_DEFECTO,
 ) -> bytes:
     """La miniatura en pequeno de una seleccion que todavia no es un episodio.
 
@@ -208,7 +230,7 @@ def preview(
     conductor, y eso no es un error, es el paso 1.
     """
     limpia = _validate_selection(db, user_id=user_id, selection=selection, exigir_minimos=False)
-    brief = _brief_de(db, settings, user_id=user_id, slots=limpia, title=title)
+    brief = _brief_de(db, settings, user_id=user_id, slots=limpia, title=title, degradado=degradado)
     return composition.preview(brief)
 
 

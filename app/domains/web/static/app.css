@@ -529,6 +529,32 @@ a:focus-visible,
   accent-color: var(--acento);
 }
 
+/* Las dos opciones de fondo son enlaces y no radios: el borrador del flujo vive
+   en la URL, así que tocarlas es navegar al mismo paso con otro fondo. Se pintan
+   igual que una opción con radio para que se lean como lo que son. */
+a.opcion {
+  display: flex;
+  text-decoration: none;
+  color: inherit;
+}
+
+a.opcion[aria-current="true"] {
+  border-color: var(--acento);
+  color: var(--acento);
+  font-weight: 600;
+}
+
+/* La muestra del degradado. El `background` lo pone el router con los colores
+   de la paleta: escribirlos aquí sería una segunda verdad que se desincroniza
+   el día que el template cambie de fondo, y en silencio. Existe para que elegir
+   «claro» u «oscuro» no sea leer una palabra sino ver el fondo. */
+.muestra {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--linea-fuerte);
+}
+
 /* El resumen: pares etiqueta/valor en una rejilla de dos columnas, con los
    números alineados. */
 .resumen {

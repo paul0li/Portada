@@ -1,0 +1,16 @@
+-- El episodio recuerda que fondo por defecto eligio: `claro` u `oscuro`.
+--
+-- Solo se ve cuando el episodio no trae foto de fondo, que es el caso normal.
+-- Los dos degradados los autora `composition/template.py`; aqui solo se guarda
+-- cual de los dos, por nombre.
+--
+-- ADD COLUMN y no reconstruccion (comparar con library/002): no hay ningun
+-- CHECK que cambiar, y SQLite si permite anadir una columna NOT NULL cuando su
+-- DEFAULT es una constante. Las filas que ya existen quedan en 'claro', que es
+-- con lo que se armaron: el degradado por defecto hasta hoy.
+--
+-- Sin CHECK a proposito, igual que `strength`: los nombres validos salen de la
+-- paleta del template, y quien los valida es `episodes/service.py`. Un CHECK
+-- aqui seria una segunda verdad que hay que migrar cada vez que el template
+-- autore un degradado nuevo.
+ALTER TABLE episodes_jobs ADD COLUMN degradado TEXT NOT NULL DEFAULT 'claro';

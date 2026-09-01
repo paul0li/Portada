@@ -13,6 +13,9 @@
   {% for role, photo_id in campos %}
     <input type="hidden" name="{{ role }}" value="{{ photo_id }}">
   {% endfor %}
+  {# El fondo por defecto se eligió en el paso 3 y viaja hasta aquí, como la
+     selección: el episodio se crea con todo lo del borrador o con nada. #}
+  <input type="hidden" name="degradado" value="{{ degradado }}">
 
   <label>
     <span class="rotulo">Título del episodio</span>
@@ -42,7 +45,13 @@
     {% for role in ("conductor", "invitado", "fondo", "objeto") %}
       <div>
         <dt>{{ etiquetas[role] }}</dt>
-        <dd>{{ seleccion.get(role, [])|length or "—" }}</dd>
+        {# Sin foto de fondo el hueco no es un «—»: es el degradado que se va a
+           usar, y decirlo aquí es lo mismo que decir qué marco se usa. #}
+        {% if role == "fondo" and not seleccion.get("fondo") %}
+          <dd>{{ degradado|capitalize }}</dd>
+        {% else %}
+          <dd>{{ seleccion.get(role, [])|length or "—" }}</dd>
+        {% endif %}
       </div>
     {% endfor %}
     {# La marca no se pide cada semana, pero se DICE: una entrada invisible en el

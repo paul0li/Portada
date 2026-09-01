@@ -33,6 +33,10 @@
     {% for etiqueta, nombre in usadas %}
       <div><dt>{{ etiqueta }}</dt><dd>{{ nombre }}</dd></div>
     {% endfor %}
+    {# Solo cuando se ve: con foto de fondo, el degradado no está en la imagen. #}
+    {% if fondo_por_defecto %}
+      <div><dt>Fondo</dt><dd>{{ fondo_por_defecto|capitalize }}</dd></div>
+    {% endif %}
     <div><dt>Intensidad</dt><dd>{{ episode.strength }}</dd></div>
     <div><dt>Template</dt><dd>v{{ armado.template_version }}</dd></div>
   </dl>

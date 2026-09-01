@@ -69,7 +69,7 @@ def test_composition_03_sin_fondo_se_usa_el_degradado_de_la_paleta(fotos):
     resultado = composition.compose(_brief(fotos, conductor=1))
     imagen = _abrir(resultado.final)
 
-    desde, hasta = template.PALETTE.gradient
+    desde, hasta = template.PALETTE.degradado()
     arriba = imagen.getpixel((20, 8))
     abajo = imagen.getpixel((20, 712))
 
@@ -77,6 +77,35 @@ def test_composition_03_sin_fondo_se_usa_el_degradado_de_la_paleta(fotos):
     assert sum(abs(a - b) for a, b in zip(arriba, desde, strict=True)) < 40
     assert sum(abs(a - b) for a, b in zip(abajo, hasta, strict=True)) < 40
     assert arriba != abajo, "el degradado no degrada"
+
+
+def test_composition_26_el_brief_elige_el_degradado_por_defecto(fotos):
+    """Claro u oscuro: dos constantes de la paleta, no una perilla libre.
+
+    Se comprueban las tres cosas del criterio -- que los pixeles cambian, que la
+    BASE cambia (el degradado va debajo de todo, al reves que el titulo) y que
+    un nombre inventado no rompe el armado.
+    """
+    claro = composition.Brief(photos={}, degradado="claro")
+    oscuro = composition.Brief(photos={}, degradado="oscuro")
+
+    arriba_claro = _abrir(composition.compose(claro).final).getpixel((20, 8))
+    arriba_oscuro = _abrir(composition.compose(oscuro).final).getpixel((20, 8))
+
+    assert sum(arriba_claro) > sum(arriba_oscuro) + 200, "el fondo oscuro no salio oscuro"
+    for pedido, esperado in (("claro", arriba_claro), ("oscuro", arriba_oscuro)):
+        desde, _ = template.PALETTE.degradado(pedido)
+        assert sum(abs(a - b) for a, b in zip(esperado, desde, strict=True)) < 40
+
+    # El degradado se dibuja DEBAJO de todo, asi que invalida la base: es lo
+    # contrario del titulo, y por eso cambiar de fondo cuesta una composicion.
+    assert composition.base_checksum(claro) != composition.base_checksum(oscuro)
+    assert composition.brief_checksum(claro) != composition.brief_checksum(oscuro)
+
+    # SPEC 11.4: abajo, un nombre raro no lanza -- cae en el por defecto. Quien
+    # rechaza un nombre invalido es la puerta de entrada (EPISODES-17).
+    inventado = composition.Brief(photos={}, degradado="fucsia")
+    assert composition.compose(inventado).final == composition.compose(claro).final
 
 
 def test_composition_04_un_brief_vacio_sigue_dando_un_png_valido():
@@ -377,7 +406,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "f2e031c3d254a4ca"
+HUELLA_DEL_TEMPLATE = "e5bc2209e725e763"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():

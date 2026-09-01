@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 from app.domains.composition import fonts, typography
 from app.domains.composition.template import (
     BASE_ROLES,
+    DEGRADADO_POR_DEFECTO,
     TEMPLATE,
     BackgroundTreatment,
     Palette,
@@ -44,14 +45,19 @@ PREVIEW_QUALITY = 82
 
 @dataclass(frozen=True, slots=True)
 class Brief:
-    """Lo que cambia cada semana: unas fotos y un titulo.
+    """Lo que cambia cada semana: unas fotos, un titulo y que fondo por defecto.
 
     `photos` va de rol a rutas de archivo. Nada mas: ni ids, ni filas, ni
     usuario. Un rol ausente es una entrada valida (SPEC 11.8).
+
+    `degradado` solo se ve cuando NO hay foto de fondo -- que es el caso normal.
+    Es el nombre de uno de los degradados de la paleta, no un color: el template
+    sigue siendo el unico sitio donde se decide como se ve el canal.
     """
 
     title: str = ""
     photos: Mapping[str, Sequence[Path]] = field(default_factory=dict)
+    degradado: str = DEGRADADO_POR_DEFECTO
 
     def for_role(self, role: str) -> list[Path]:
         return list(self.photos.get(role, ()))
@@ -153,15 +159,18 @@ def _vignette_mask(size: tuple[int, int], strength: float) -> Image.Image:
     return mask
 
 
-def _gradient(size: tuple[int, int], palette: Palette) -> Image.Image:
+def _gradient(
+    size: tuple[int, int], palette: Palette, nombre: str = DEGRADADO_POR_DEFECTO
+) -> Image.Image:
     """La respuesta a "no hay fondo" (SPEC 6).
 
     Deterministico, no generado: un fondo inventado por un modelo seria el unico
     elemento que cambia cada semana sin motivo, y eso es exactamente lo que el
-    producto existe para evitar.
+    producto existe para evitar. Que haya DOS degradados no lo cambia: los dos
+    estan escritos en la paleta, y el nombre elige, no describe.
     """
     ancho, alto = size
-    desde, hasta = palette.gradient
+    desde, hasta = palette.degradado(nombre)
     # Se dibuja en una columna de 1px de ancho y se estira: una interpolacion
     # por fila en vez de una por pixel.
     columna = Image.new("RGB", (1, alto))
@@ -236,7 +245,7 @@ def _draw_base(brief: Brief, template: Template) -> Image.Image:
             _treat_background(_open(fondos[0]), template.background, template.canvas)
         )
     else:
-        canvas.alpha_composite(_gradient(template.canvas, template.palette))
+        canvas.alpha_composite(_gradient(template.canvas, template.palette, brief.degradado))
 
     for role in BASE_ROLES:
         if role == "fondo":
@@ -425,6 +434,10 @@ def base_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
     """
     digest = hashlib.sha256()
     digest.update(f"base:v{template.version}\n".encode())
+    # El degradado SI va aqui: se dibuja debajo de todo, asi que cambiarlo
+    # invalida la base. Es lo contrario del titulo, y por eso cambiar de fondo
+    # cuesta una composicion entera y corregir una errata no.
+    digest.update(f"degradado={brief.degradado}\n".encode())
     _huella_de_fotos(digest, brief, BASE_ROLES)
     return digest.hexdigest()
 
@@ -439,6 +452,7 @@ def brief_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
     digest = hashlib.sha256()
     digest.update(f"v{template.version}\n".encode())
     digest.update(typography.normalize(brief.title, template.typography).encode())
+    digest.update(f"\ndegradado={brief.degradado}".encode())
     for role in sorted(brief.photos):
         nombres = sorted(Path(p).name for p in brief.photos[role])
         digest.update(f"\n{role}={','.join(nombres)}".encode())

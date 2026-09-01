@@ -121,9 +121,11 @@ Notes:
 - **Cutouts.** `conductor`, `invitado` and `objeto` are composited as cutouts (background removed).
   This runs once per photo, at upload time, and the result is cached in the library — so the weekly
   path never waits on it. See §12.2.
-- **No background is a real answer.** If no `fondo` is selected, the slot is filled with the show's
-  palette gradient — deterministic, not generated. Consistency beats novelty here; a generated
-  background would be the one element that changes every week for no reason.
+- **No background is a real answer.** If no `fondo` is selected, the slot is filled with a gradient
+  from the show's palette — deterministic, not generated. Consistency beats novelty here; a
+  generated background would be the one element that changes every week for no reason. The palette
+  authors **two** of them, light and dark, and the episode picks one: a closed list of names inside
+  the template, not a knob that lets the layout drift (§11.1, §11.3).
 - **The numbers above live in one template file.** Editing them changes every future thumbnail at
   once. That file *is* the show's visual identity, and it's the only place layout is decided.
 

@@ -1,5 +1,6 @@
 """Contrato publico de episodes."""
 
+from app.domains.composition.api import DEGRADADO_POR_DEFECTO, DEGRADADOS
 from app.domains.episodes.repo import Assembly, Episode
 from app.domains.episodes.router import router
 from app.domains.episodes.service import (
@@ -17,6 +18,8 @@ from app.domains.finishing.api import DEFAULT_STRENGTH, STRENGTHS
 
 __all__ = [
     "DEFAULT_STRENGTH",
+    "DEGRADADOS",
+    "DEGRADADO_POR_DEFECTO",
     "MAXIMOS",
     "MINIMOS",
     "STRENGTHS",
