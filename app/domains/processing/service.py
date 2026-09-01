@@ -9,6 +9,8 @@ Es la version, a nivel de recorte, de la regla del SPEC 11.4: el armado siempre
 es salida valida. Un recorte roto degrada el resultado; no lo impide.
 """
 
+import shutil
+
 from app.config import Settings
 from app.core.db import Database
 from app.core.logging import get_logger
@@ -51,14 +53,21 @@ def ensure_cutout(
             )
 
     try:
-        resultado = provider.cutout(intake.path(settings, source))
+        origen = intake.path(settings, source)
+        resultado = provider.cutout(origen)
         # El proveedor passthrough devuelve la misma ruta: no hay nada nuevo que
         # guardar y la derivada apunta al propio origen.
-        if resultado == intake.path(settings, source):
+        if resultado == origen:
             result_media_id = media_id
         else:
-            with resultado.open("rb") as handle:
-                result_media_id = intake.store(db, settings, handle).id
+            try:
+                with resultado.open("rb") as handle:
+                    result_media_id = intake.store(db, settings, handle).id
+            finally:
+                # El recorte ya vive en el almacen, direccionado por su contenido.
+                # El temporal se borra en todos los caminos: un proveedor que
+                # recorta no puede ir dejando PNGs de 1 MB por el disco.
+                shutil.rmtree(resultado.parent, ignore_errors=True)
     except Exception as exc:
         log.warning(
             "processing.cutout.failed",
@@ -106,3 +115,15 @@ def cutout_or_source(db: Database, media_id: str) -> str:
         assert derivative.result_media_id is not None
         return derivative.result_media_id
     return media_id
+
+
+def clear_cutout(db: Database, *, media_id: str) -> None:
+    """Olvida el recorte de una imagen: vuelve a servirse el original.
+
+    Es la vuelta de `ensure_cutout`, y existe porque quitarle el fondo a una foto
+    es una capa que se pone y se saca, no una decision que se toma una vez.
+    Borrar dos veces no es un error la segunda.
+    """
+    with db.transaction() as conn:
+        repo.delete(conn, source_media_id=media_id, kind=CUTOUT)
+    log.info("processing.cutout.cleared", extra={"media_id": media_id})

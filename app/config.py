@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # `passthrough` no recorta nada, y es correcto para el MVP: si la foto ya
     # viene como PNG con transparencia, el recorte ya esta hecho. Aca entrara
     # `rembg` sin tocar ningun otro dominio.
-    cutout_provider: Literal["passthrough"] = "passthrough"
+    cutout_provider: Literal["passthrough", "rembg"] = "passthrough"
 
     # `noop` no aplica ninguna pasada de IA. No es un stub pendiente: es la
     # configuracion en la que el producto ya funciona (SPEC 4.3, 11.4).

@@ -81,3 +81,10 @@ tolere equivocarse.
 
 - **WEB-10** — toda página privada se sirve con `Cache-Control: no-store`: nada de lo que hay dentro es de nadie más.
 - **WEB-11** — ninguna página filtra el token del enlace ni la cookie en su HTML.
+
+## Sacarle el fondo
+
+- **WEB-33** — al subir una foto aparece un modal con la foto recién subida, y desde ahí se le puede quitar el fondo.
+- **WEB-34** — quitarle el fondo desde el modal cambia lo que sirve la URL de la foto, y se puede deshacer: la decisión no es de una sola dirección.
+- **WEB-35** — el modal no ofrece quitarle el fondo a un logo ni a un marco: son mobiliario de marca y ya vienen con su transparencia.
+- **WEB-36** — si esta instancia no tiene recorte automático, el modal lo dice en vez de ofrecer un botón que no haría nada.

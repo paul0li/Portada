@@ -139,7 +139,50 @@ def _foto(photo, media) -> dict:
         "url": f"/photos/{photo.id}/file",
         "ancho": media.width,
         "alto": media.height,
+        # La URL de la foto es un PUNTERO: sirve el recorte si esta listo. Como
+        # los mismos bytes de URL pueden devolver bytes distintos, el `<img>`
+        # lleva la identidad de lo que hoy sirve. Sin eso, quitar el fondo no se
+        # veria hasta recargar a mano -- la trampa del Cache-Control que miente.
+        "sin_fondo": media.id != photo.media_id,
+        "version": media.id,
     }
+
+
+def _contexto_modal(request, db, settings, user_id: str, nueva_id: str) -> dict:
+    """El modal de la foto recien subida, si `?nueva=` apunta a una foto mia.
+
+    Un id que no resuelve -- ajeno, borrado, inventado -- no es un error: no hay
+    modal y la pantalla se pinta igual. Es una decoracion de la URL, no una ruta.
+    """
+    if not nueva_id:
+        return {}
+    try:
+        photo = library.get_photo(db, user_id=user_id, photo_id=nueva_id)
+    except AppError:
+        return {}
+    aqui = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    limpia = _sin_parametro(aqui, "nueva")
+    return {
+        "nueva": _foto(photo, library.resolve_media(db, settings, photo)),
+        # No se ofrece lo que esta instancia no puede hacer. Con `passthrough`
+        # puesto, el boton llamaria al recorte, el recorte devolveria la misma
+        # imagen, y no pasaria nada: un boton que miente.
+        "recorte_activo": request.app.state.cutout_provider.quita_fondo,
+        "aqui_sin_modal": limpia,
+        "aqui_con_modal": f"{limpia}{'&' if '?' in limpia else '?'}nueva={photo.id}",
+    }
+
+
+def _sin_parametro(url: str, nombre: str) -> str:
+    ruta, _, consulta = url.partition("?")
+    quedan = [p for p in consulta.split("&") if p and not p.startswith(f"{nombre}=")]
+    return f"{ruta}?{'&'.join(quedan)}" if quedan else ruta
+
+
+def _con_modal(destino: str, photo_id: str) -> str:
+    """La URL de vuelta, con el modal abierto sobre ella."""
+    limpia = _sin_parametro(destino, "nueva")
+    return f"{limpia}{'&' if '?' in limpia else '?'}nueva={photo_id}"
 
 
 def _contexto_libreria(db, settings, user_id: str, role: str, **extra) -> dict:
@@ -151,6 +194,9 @@ def _contexto_libreria(db, settings, user_id: str, role: str, **extra) -> dict:
         "etiquetas": ETIQUETAS,
         "ayudas": AYUDAS,
         "stats": library.stats(db, user_id=user_id),
+        # Que roles admiten recorte lo decide `library`, no la plantilla: si la
+        # lista se copiara aqui, el dia que cambie habria dos verdades.
+        "roles_con_recorte": library.ROLES_CON_RECORTE,
         **extra,
     }
 
@@ -335,11 +381,18 @@ def historial(request: Request, db: Db, user_id: OptionalUser) -> Response:
 
 @router.get("/libreria")
 def libreria(
-    request: Request, db: Db, settings: Config, user_id: OptionalUser, role: str = ""
+    request: Request,
+    db: Db,
+    settings: Config,
+    user_id: OptionalUser,
+    role: str = "",
+    nueva: str = "",
 ) -> Response:
     if user_id is None:
         return _a_entrar()
-    return _pagina(request, "libreria.html", _contexto_libreria(db, settings, user_id, role))
+    contexto = _contexto_libreria(db, settings, user_id, role)
+    contexto |= _contexto_modal(request, db, settings, user_id, nueva)
+    return _pagina(request, "libreria.html", contexto)
 
 
 # `def` y no `async def`: dentro corre Pillow, y FastAPI manda las funciones
@@ -359,7 +412,7 @@ def subir_foto(
         return _a_entrar()
     destino = _vuelta_segura(volver, f"/libreria?role={role}")
     try:
-        library.add_photo(
+        photo = library.add_photo(
             db,
             settings,
             request.app.state.cutout_provider,
@@ -379,8 +432,53 @@ def subir_foto(
             "libreria.html",
             _contexto_libreria(db, settings, user_id, role, error=_mensaje(error)),
         )
-    # Se vuelve a donde se estaba: si la subida salió del flujo semanal, el paso
-    # sigue donde estaba y con lo ya elegido puesto.
+    # Se vuelve a donde se estaba -- si la subida salió del flujo semanal, el
+    # paso sigue donde estaba y con lo ya elegido puesto -- y con el modal de la
+    # foto recién subida abierto encima.
+    return RedirectResponse(_con_modal(destino, photo.id), status_code=303)
+
+
+# `def` y no `async def`: aquí dentro corre el modelo de recorte.
+@router.post("/libreria/fotos/{photo_id}/fondo")
+def quitar_fondo(
+    request: Request,
+    db: Db,
+    settings: Config,
+    user_id: OptionalUser,
+    photo_id: str,
+    volver: Annotated[str, Form()] = "",
+) -> Response:
+    if user_id is None:
+        return _a_entrar()
+    destino = _vuelta_segura(volver, "/libreria")
+    try:
+        library.quitar_fondo(
+            db,
+            settings,
+            request.app.state.cutout_provider,
+            user_id=user_id,
+            photo_id=photo_id,
+        )
+    except AppError as error:
+        return _pagina(request, "vacio.html", {"mensaje": _mensaje(error)}, status=error.status)
+    return RedirectResponse(destino, status_code=303)
+
+
+@router.post("/libreria/fotos/{photo_id}/fondo/deshacer")
+def restaurar_fondo(
+    request: Request,
+    db: Db,
+    user_id: OptionalUser,
+    photo_id: str,
+    volver: Annotated[str, Form()] = "",
+) -> Response:
+    if user_id is None:
+        return _a_entrar()
+    destino = _vuelta_segura(volver, "/libreria")
+    try:
+        library.restaurar_fondo(db, user_id=user_id, photo_id=photo_id)
+    except AppError as error:
+        return _pagina(request, "vacio.html", {"mensaje": _mensaje(error)}, status=error.status)
     return RedirectResponse(destino, status_code=303)
 
 
@@ -494,7 +592,11 @@ def flujo(
         "elegidas": len(elegidas),
         "obligatorio": role in episodes.MINIMOS,
         "siguiente": _url_flujo(paso + 1, seleccion),
+        "roles_con_recorte": library.ROLES_CON_RECORTE,
     }
+    contexto |= _contexto_modal(
+        request, db, settings, user_id, request.query_params.get("nueva", "")
+    )
     return _pagina(request, "flujo_fotos.html", contexto)
 
 

@@ -228,6 +228,45 @@ def test_composition_18_un_recorte_se_escala_por_el_sujeto(tmp_path):
     )
 
 
+def test_composition_25_el_encuadre_ignora_el_alfa_residual(tmp_path):
+    """Un recorte automatico no deja ceros duros: deja alfa 1..8 desperdigado.
+
+    Medido con rembg sobre una foto real: unos 15.000 pixeles casi transparentes,
+    y con el modelo `isnet` llegaban hasta el borde del lienzo. `getbbox()` cuenta
+    cualquier alfa distinto de cero, asi que el encuadre pasaba a medir el LIENZO:
+    el bbox saltaba de 912 a 1200 px de ancho. La figura sale mas chica y
+    descentrada, sin romper nada y sin avisar. Es COMPOSITION-18 otra vez, pero
+    con la causa al reves: no es padding, es ruido subumbral.
+    """
+    sujeto = Image.new("RGBA", (200, 400), (255, 0, 0, 255))
+
+    limpio = tmp_path / "limpio.png"
+    lienzo = Image.new("RGBA", (1400, 1000), (0, 0, 0, 0))
+    lienzo.paste(sujeto, (600, 300))
+    lienzo.save(limpio)
+
+    # El mismo recorte, con la basura que deja un modelo de verdad: un pixel
+    # casi transparente en cada esquina.
+    con_ruido = tmp_path / "con-ruido.png"
+    sucio = lienzo.copy()
+    for xy in ((0, 0), (1399, 0), (0, 999), (1399, 999)):
+        sucio.putpixel(xy, (120, 120, 120, 3))
+    sucio.save(con_ruido)
+
+    def alto_visible(path):
+        imagen = _abrir(composition.compose(composition.Brief(photos={"conductor": [path]})).base)
+        filas = [
+            y
+            for y in range(720)
+            if any(imagen.getpixel((x, y))[0] > 200 for x in range(0, 1280, 4))
+        ]
+        return max(filas) - min(filas) if filas else 0
+
+    assert alto_visible(con_ruido) == alto_visible(limpio), (
+        "el alfa residual encuadro por el lienzo en vez de por la persona"
+    )
+
+
 # --- logo y titulo -------------------------------------------------------
 
 

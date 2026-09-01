@@ -1,7 +1,17 @@
-.PHONY: install dev test lint fmt migrate preview clean
+.PHONY: install install-cutout cutout-model dev test lint fmt migrate preview clean
 
 install:
 	uv sync
+
+# El recorte automatico, aparte: 369 MB de librerias. Quien no lo quiere, no los
+# instala, y `passthrough` sigue siendo el proveedor por defecto.
+install-cutout:
+	uv sync --extra cutout
+
+# El modelo son 177 MB que no viven en el repo. Se bajan una vez, a proposito y
+# no en medio de la primera subida de alguien.
+cutout-model:
+	uv run --extra cutout python -c "from rembg import new_session; new_session('u2net'); print('u2net listo')"
 
 dev:
 	uv run uvicorn app.main:app --reload --port 8000

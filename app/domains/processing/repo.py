@@ -67,3 +67,17 @@ def upsert(
     found = find(conn, source_media_id=source_media_id, kind=kind)
     assert found is not None
     return found
+
+
+def delete(conn: sqlite3.Connection, *, source_media_id: str, kind: str) -> None:
+    """Quita el registro de la derivada. NO borra ningun archivo.
+
+    Los medios se direccionan por contenido y son inmutables: el recorte sigue en
+    disco y volveria a deduplicarse solo si se recalcula. Lo que se borra aqui es
+    un puntero, asi que esto no es una excepcion a SPEC 11.11 -- no hay ninguna
+    foto que perder.
+    """
+    conn.execute(
+        "DELETE FROM processing_derivatives WHERE source_media_id = ? AND kind = ?",
+        (source_media_id, kind),
+    )
