@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 from app.core.db import utcnow
 from app.core.ids import new_id
+from app.domains.composition import api as composition
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,10 @@ class Episode:
     created_at: str
     deleted_at: str | None
     slots: dict[str, list[str]] = field(default_factory=dict)  # rol -> photo_ids
+    # Rol -> empujon. Vacio es lo normal: "donde diga el template". El tipo es
+    # el de `composition` y no uno propio de aqui -- un ajuste es un concepto de
+    # composicion, y tener dos copias del mismo dato es tener dos verdades.
+    ajustes: dict[str, composition.Ajuste] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +58,14 @@ def _slots(conn: sqlite3.Connection, episode_id: str) -> dict[str, list[str]]:
     return seleccion
 
 
+def _ajustes(conn: sqlite3.Connection, episode_id: str) -> dict[str, composition.Ajuste]:
+    rows = conn.execute(
+        "SELECT role, dx, dy, capa FROM episodes_ajustes WHERE episode_id = ?",
+        (episode_id,),
+    )
+    return {role: composition.Ajuste(dx=dx, dy=dy, capa=capa) for role, dx, dy, capa in rows}
+
+
 def insert(
     conn: sqlite3.Connection,
     *,
@@ -61,6 +74,7 @@ def insert(
     strength: str,
     degradado: str,
     selection: dict[str, list[str]],
+    ajustes: dict[str, composition.Ajuste] | None = None,
 ) -> Episode:
     episode_id = new_id()
     creado = utcnow()
@@ -68,6 +82,13 @@ def insert(
         "INSERT INTO episodes_jobs (id, user_id, title, strength, degradado, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
         (episode_id, user_id, title, strength, degradado, creado),
+    )
+    conn.executemany(
+        "INSERT INTO episodes_ajustes (episode_id, role, dx, dy, capa) VALUES (?, ?, ?, ?, ?)",
+        [
+            (episode_id, role, ajuste.dx, ajuste.dy, ajuste.capa)
+            for role, ajuste in (ajustes or {}).items()
+        ],
     )
     conn.executemany(
         "INSERT INTO episodes_slots (episode_id, role, photo_id, position) VALUES (?, ?, ?, ?)",
@@ -86,6 +107,7 @@ def insert(
         created_at=creado,
         deleted_at=None,
         slots=selection,
+        ajustes=dict(ajustes or {}),
     )
 
 
@@ -96,7 +118,7 @@ def get(conn: sqlite3.Connection, *, user_id: str, episode_id: str) -> Episode |
     ).fetchone()
     if row is None:
         return None
-    return Episode(**dict(row), slots=_slots(conn, episode_id))
+    return Episode(**dict(row), slots=_slots(conn, episode_id), ajustes=_ajustes(conn, episode_id))
 
 
 def list_episodes(conn: sqlite3.Connection, *, user_id: str, limit: int = 50) -> list[Episode]:
@@ -105,7 +127,10 @@ def list_episodes(conn: sqlite3.Connection, *, user_id: str, limit: int = 50) ->
         "ORDER BY created_at DESC, id DESC LIMIT ?",
         (user_id, limit),
     ).fetchall()
-    return [Episode(**dict(r), slots=_slots(conn, r["id"])) for r in rows]
+    return [
+        Episode(**dict(r), slots=_slots(conn, r["id"]), ajustes=_ajustes(conn, r["id"]))
+        for r in rows
+    ]
 
 
 def update_title(conn: sqlite3.Connection, *, episode_id: str, title: str) -> None:

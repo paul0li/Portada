@@ -14,7 +14,13 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
 
-TEMPLATE_VERSION = 5
+TEMPLATE_VERSION = 6
+# v6 (2026-09-01): el template deja de decidir la posicion FINAL de una figura y
+#   pasa a decidir la DE PARTIDA: un episodio puede empujar conductor, invitado
+#   y objeto dentro de los limites de `Ajustes`, y reordenarlos entre ellos. Con
+#   los ajustes en cero no cambia ni un pixel; sube igual porque el template
+#   decide algo nuevo -- cuanto es un empujon y hasta donde llega -- y esos
+#   numeros mueven pixeles de cualquier episodio que use uno.
 # v5 (2026-09-01): el degradado que responde a "no hay fondo" deja de ser uno.
 #   El template autora DOS -- claro y oscuro -- y el episodio elige cual. Sigue
 #   sin haber nada generado: son dos constantes de esta paleta, no una perilla
@@ -105,6 +111,48 @@ SLOTS: dict[str, Slot] = {
 }
 
 TITLE_Z = 4  # entre el conductor y el logo
+
+
+# --- lo que un episodio puede mover --------------------------------------
+#
+# SPEC 11.1 sigue mandando -- el layout es del template y no de la semana --
+# pero "fijo" resulto ser demasiado fijo. Con fotos reales pasa que el invitado
+# queda tapado o que un objeto pisa el titulo, y arreglarlo pedia editar este
+# archivo: cambiar el canal entero para arreglar UNA miniatura.
+#
+# Un empujon acotado arregla esa miniatura y deja las demas quietas. Lo que
+# sigue sin poderse: cambiar el tamano, salirse de los topes, esconderse debajo
+# del fondo o taparle el titulo. La consistencia de SPEC 15.3 vive en que los
+# slots, las alturas y todo lo demas sigan siendo de aqui.
+
+# Los roles que un episodio puede mover. El fondo y el marco van a sangre
+# completa -- no hay donde moverlos -- y el logo y el titulo son mobiliario de
+# marca (SPEC 11.5): justo los que nunca se tocan.
+ROLES_MOVIBLES = ("objeto", "invitado", "conductor")
+
+
+@dataclass(frozen=True, slots=True)
+class Ajustes:
+    """Cuanto es un empujon y hasta donde llega.
+
+    `paso` es de 20px porque una miniatura se mira a ~320px de ancho: ahi 20px
+    son 5, que es el empujon mas chico que se nota. Con 4px no pasaria nada
+    visible y harian falta veinte toques para mover algo.
+
+    Los topes no estan para proteger el lienzo: estan para que "empujar" no
+    acabe siendo "colocar donde sea", que es otro producto.
+    """
+
+    paso: int = 20
+    max_x: int = 400
+    max_y: int = 200
+    # La capa efectiva se queda entre el fondo (z=0) y el titulo (z=4): una
+    # figura no puede esconderse detras del degradado ni taparle el titulo.
+    capa_min: int = 1
+    capa_max: int = 3
+
+
+AJUSTES = Ajustes()
 
 # Zona util cuando hay marco: por debajo de esto, la banda con el nombre del
 # show tapa lo que se dibuje. Medido sobre el marco real de "El Club de las 3
@@ -246,6 +294,7 @@ class Template:
     palette: Palette = PALETTE
     background: BackgroundTreatment = BACKGROUND
     title_z: int = TITLE_Z
+    ajustes: Ajustes = AJUSTES
 
 
 TEMPLATE = Template()

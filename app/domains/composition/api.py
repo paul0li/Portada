@@ -6,8 +6,12 @@ titulo, sale un PNG. Todo lo demas es de quien lo llama.
 
 from app.domains.composition.assembly import (
     BASES,
+    SIN_AJUSTE,
+    Ajuste,
     Brief,
     Composition,
+    acotar,
+    ajuste_de,
     base_checksum,
     brief_checksum,
     compose,
@@ -15,15 +19,21 @@ from app.domains.composition.assembly import (
     reapply,
 )
 from app.domains.composition.template import (
+    AJUSTES,
     DEGRADADO_POR_DEFECTO,
     DEGRADADOS,
+    ROLES_MOVIBLES,
     TEMPLATE,
     TEMPLATE_VERSION,
     Template,
 )
 
 __all__ = [
+    "AJUSTES",
     "BASES",
+    "ROLES_MOVIBLES",
+    "SIN_AJUSTE",
+    "Ajuste",
     "DEGRADADOS",
     "DEGRADADO_POR_DEFECTO",
     "TEMPLATE",
@@ -31,6 +41,8 @@ __all__ = [
     "Brief",
     "Composition",
     "Template",
+    "acotar",
+    "ajuste_de",
     "base_checksum",
     "brief_checksum",
     "compose",

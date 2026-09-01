@@ -79,6 +79,105 @@ def test_composition_03_sin_fondo_se_usa_el_degradado_de_la_paleta(fotos):
     assert arriba != abajo, "el degradado no degrada"
 
 
+def test_composition_27_un_ajuste_mueve_la_figura_y_su_capa(fotos):
+    """El template decide la posicion DE PARTIDA; el episodio, la final.
+
+    Se comprueban las dos mitades: que el desplazamiento mueve pixeles, y que la
+    capa cambia quien tapa a quien -- que es lo que COMPOSITION-05 fija al reves
+    (el conductor delante del invitado) y lo que un ajuste puede invertir.
+    """
+    quieto = _brief(fotos, conductor=1, invitado=1)
+    movido = composition.Brief(
+        title=quieto.title,
+        photos=quieto.photos,
+        ajustes={"conductor": composition.Ajuste(dx=-120)},
+    )
+    en_cero = composition.Brief(
+        title=quieto.title,
+        photos=quieto.photos,
+        ajustes={"conductor": composition.Ajuste()},
+    )
+
+    assert composition.compose(movido).final != composition.compose(quieto).final
+    # Un ajuste que no mueve nada es exactamente no ajustar: mismos bytes.
+    assert composition.compose(en_cero).final == composition.compose(quieto).final
+
+    # La capa: el conductor (z=3, rojo) tapa al invitado (z=2, azul) donde se
+    # superponen. UN solo toque de "atras" tiene que invertirlo -- si hicieran
+    # falta dos, el primero seria un boton que no hace nada.
+    encima = _abrir(composition.compose(quieto).final)
+    debajo = _abrir(
+        composition.compose(
+            composition.Brief(
+                title=quieto.title,
+                photos=quieto.photos,
+                ajustes={"conductor": composition.Ajuste(capa=-1)},
+            )
+        ).final
+    )
+    solapan = [
+        (x, y)
+        for x in range(760, 900, 10)
+        for y in range(300, 520, 10)
+        if encima.getpixel((x, y)) == (255, 0, 0) and debajo.getpixel((x, y)) == (0, 0, 255)
+    ]
+    assert solapan, "mandar el conductor atras no cambio quien tapa a quien"
+
+
+def test_composition_28_un_ajuste_desmedido_se_acota(fotos):
+    """SPEC 11.4: el armado siempre es salida valida. Un numero absurdo mueve
+    hasta el tope y ya -- nunca saca la figura del cuadro ni lanza."""
+    limites = template.AJUSTES
+
+    def _con(ajuste):
+        return composition.Brief(
+            photos={"conductor": [fotos["conductor"]]}, ajustes={"conductor": ajuste}
+        )
+
+    desmedido = _con(composition.Ajuste(dx=99999, dy=-99999, capa=99))
+    en_el_tope = _con(composition.Ajuste(dx=limites.max_x, dy=-limites.max_y, capa=99))
+
+    assert composition.compose(desmedido).final == composition.compose(en_el_tope).final
+
+    # Y la capa no deja esconder la figura bajo el fondo ni ponerla sobre el
+    # titulo: el z efectivo se queda entre los dos.
+    slot_z = template.SLOTS["conductor"].z
+    for pedida, esperada in ((99, limites.capa_max), (-99, limites.capa_min)):
+        acotado = composition.acotar("conductor", composition.Ajuste(capa=pedida))
+        assert slot_z + acotado.capa == esperada
+
+    # Un rol que no se mueve no se mueve, se pida lo que se pida.
+    assert composition.acotar("marco", composition.Ajuste(dx=200)) == composition.SIN_AJUSTE
+
+
+def test_composition_29_los_ajustes_van_en_el_checksum_de_la_base(fotos):
+    """Mover invalida lo de abajo, al reves que el titulo: la figura ESTA en la
+    base. Y dos briefs que dibujan lo mismo tienen que dar el mismo checksum."""
+    quieto = _brief(fotos, conductor=1, invitado=1)
+
+    def _con(ajuste):
+        return composition.Brief(
+            title=quieto.title, photos=quieto.photos, ajustes={"conductor": ajuste}
+        )
+
+    movido = _con(composition.Ajuste(dx=60))
+
+    assert composition.base_checksum(movido) != composition.base_checksum(quieto)
+    assert composition.brief_checksum(movido) != composition.brief_checksum(quieto)
+
+    # Un ajuste nulo no es un ajuste: mismo dibujo, mismo checksum.
+    assert composition.base_checksum(_con(composition.Ajuste())) == composition.base_checksum(
+        quieto
+    )
+
+    # Y dos empujones desmedidos que acaban en el mismo tope tampoco se
+    # distinguen: se hashea el efecto, no lo pedido.
+    tope = template.AJUSTES.max_x
+    assert composition.base_checksum(_con(composition.Ajuste(dx=tope + 500))) == (
+        composition.base_checksum(_con(composition.Ajuste(dx=tope)))
+    )
+
+
 def test_composition_26_el_brief_elige_el_degradado_por_defecto(fotos):
     """Claro u oscuro: dos constantes de la paleta, no una perilla libre.
 
@@ -406,7 +505,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "e5bc2209e725e763"
+HUELLA_DEL_TEMPLATE = "70b1c1bcf68a195c"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():
@@ -419,6 +518,11 @@ def test_composition_14_editar_el_template_obliga_a_subir_la_version():
                 template.PALETTE,
                 template.BACKGROUND,
                 template.TITLE_Z,
+                # Cuanto es un empujon y hasta donde llega: son numeros de
+                # layout como los demas, y cambiarlos mueve los pixeles de
+                # cualquier episodio que use un ajuste.
+                template.AJUSTES,
+                template.ROLES_MOVIBLES,
                 # La tipografia no vive en template.py pero decide cada pixel del
                 # titulo: cambiarla sin subir la version deja el canal con dos
                 # fuentes, porque `brief_checksum` incluye la version y el armado

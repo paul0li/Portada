@@ -6,7 +6,13 @@ from fastapi.responses import FileResponse
 from app.core.auth import CurrentUser
 from app.core.deps import Config, Db
 from app.domains.episodes import errors, repo, service
-from app.domains.episodes.schemas import AssemblyOut, CreateEpisode, EpisodeOut, UpdateTitle
+from app.domains.episodes.schemas import (
+    AjusteIn,
+    AssemblyOut,
+    CreateEpisode,
+    EpisodeOut,
+    UpdateTitle,
+)
 from app.domains.intake import api as intake
 
 router = APIRouter(prefix="/episodes", tags=["episodes"])
@@ -39,6 +45,9 @@ def _out(db, episode: repo.Episode) -> EpisodeOut:
         title=episode.title,
         strength=episode.strength,
         degradado=episode.degradado,
+        ajustes={
+            role: AjusteIn(dx=a.dx, dy=a.dy, capa=a.capa) for role, a in episode.ajustes.items()
+        },
         selection=episode.slots,
         created_at=episode.created_at,
         assembly=_assembly_out(assembly),
@@ -54,6 +63,7 @@ def create_episode(body: CreateEpisode, db: Db, user_id: CurrentUser) -> Episode
         selection=body.normalized_selection(),
         strength=body.strength,
         degradado=body.degradado,
+        ajustes=body.normalized_ajustes(),
     )
     return _out(db, episode)
 

@@ -330,3 +330,42 @@ def test_episodes_17_el_episodio_recuerda_su_fondo_por_defecto(logged_in, imagen
     invalido = _crear(logged_in, {"conductor": conductor}, degradado="fucsia")
     assert invalido.status_code == 422, "acepto un fondo que no existe"
     assert invalido.json()["error"]["code"] == "EPISODES_SELECTION_INVALID"
+
+
+def test_episodes_18_el_episodio_recuerda_los_ajustes(logged_in, imagen):
+    """El empujon viaja con el episodio hasta los pixeles, y se guarda acotado.
+
+    Y pedir mover un rol que no se mueve es 422: un ajuste que se ignora en
+    silencio es peor que uno rechazado, porque parece que funciono.
+    """
+    fotos = _libreria(logged_in, imagen, "conductor", "invitado")
+
+    quieto = _crear(logged_in, fotos)
+    movido = _crear(logged_in, fotos, ajustes={"conductor": {"dx": -120, "capa": -1}})
+    assert movido.status_code == 201, movido.text
+
+    guardado = movido.json()["ajustes"]
+    assert guardado["conductor"]["dx"] == -120
+    assert guardado["conductor"]["capa"] == -1
+    assert "invitado" not in guardado, "guardo un rol que nadie movio"
+
+    def _png(respuesta):
+        episode_id = respuesta.json()["id"]
+        logged_in.post(f"/episodes/{episode_id}/assembly")
+        return logged_in.get(f"/episodes/{episode_id}/assembly/file").content
+
+    assert _png(movido) != _png(quieto), "el ajuste no llego a la miniatura"
+
+    # Se guarda ACOTADO: la fila dice lo que se va a dibujar, no lo que se pidio.
+    from app.domains.composition import api as composition
+
+    desmedido = _crear(logged_in, fotos, ajustes={"conductor": {"dx": 99999}})
+    assert desmedido.json()["ajustes"]["conductor"]["dx"] == composition.AJUSTES.max_x
+
+    # Un ajuste que no mueve nada no deja rastro: pedirlo en cero es no pedirlo.
+    en_cero = _crear(logged_in, fotos, ajustes={"conductor": {"dx": 0}})
+    assert en_cero.json()["ajustes"] == {}
+
+    ajeno = _crear(logged_in, fotos, ajustes={"marco": {"dx": 40}})
+    assert ajeno.status_code == 422, "dejo mover un rol que no se mueve"
+    assert ajeno.json()["error"]["code"] == "EPISODES_SELECTION_INVALID"

@@ -54,6 +54,11 @@
         {% endif %}
       </div>
     {% endfor %}
+    {% if movidas %}
+      {# Un empujón cambia la miniatura y no se ve en esta pantalla: decirlo aquí
+         es lo mismo que decir qué marco se usa. #}
+      <div><dt>Movidas</dt><dd>{{ movidas|join(", ") }}</dd></div>
+    {% endif %}
     {# La marca no se pide cada semana, pero se DICE: una entrada invisible en el
        checksum del armado sería peor que un paso de más. #}
     {% for role, foto in marca.items() %}

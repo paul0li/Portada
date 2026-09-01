@@ -28,4 +28,5 @@ con `composition`, guarda con `intake` y pasa por `finishing`.
 - **EPISODES-14** — una foto borrada de la librería no rompe un episodio que ya la usó (SPEC §11.11).
 - **EPISODES-15** — un episodio con `marco` lo lleva hasta los píxeles: el armado por HTTP produce lo mismo que el armado por script.
 - **EPISODES-16** — corregir el título cambia lo que sirve la URL del armado, y un cliente que la había pedido antes se entera.
+- **EPISODES-18** — el episodio recuerda los ajustes de cada rol y el armado los respeta; ajustar un rol que no se puede mover es 422, no un ajuste ignorado en silencio.
 - **EPISODES-17** — el episodio recuerda qué fondo por defecto se eligió, el armado lo respeta, y un nombre que no existe es un 422 y no un armado con el fondo equivocado.

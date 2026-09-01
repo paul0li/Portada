@@ -45,6 +45,7 @@ la da por puesta.
 - **WEB-19** — volver atrás en el flujo conserva lo ya elegido.
 - **WEB-20** — puedo subir la foto del invitado sin salirme del flujo, y vuelvo al mismo paso con lo elegido intacto (SPEC §8, paso 3: el invitado se sube cada semana).
 - **WEB-21** — la vuelta después de subir es siempre dentro de Portada: una dirección externa se ignora.
+- **WEB-38** — puedo empujar al conductor, al invitado y a los objetos, y cambiar qué tapa a quién, desde el paso de ese rol y sin salir de él; el preview lo enseña y la elección llega al armado. En los topes el empujón deja de ofrecerse en vez de no hacer nada.
 - **WEB-37** — en el paso del fondo puedo elegir el degradado claro o el oscuro sin salir del paso, la elección sobrevive hasta el final del flujo, y la miniatura sale con el fondo que elegí.
 
 ## El preview en vivo

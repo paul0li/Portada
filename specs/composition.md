@@ -13,6 +13,17 @@ y un título, sale un PNG.
 - **COMPOSITION-04** — un brief vacío produce igual un PNG válido: el armado siempre es salida válida (SPEC §11.4).
 - **COMPOSITION-05** — el `conductor` va delante del `invitado`: el z-order de SPEC §6 se respeta.
 
+## Empujar una figura (SPEC §6)
+
+El template decide la posición **de partida**, no la final. Un episodio puede
+empujar `conductor`, `invitado` y `objeto` y reordenarlos entre ellos, dentro de
+los límites del propio template. Lo que no puede: cambiar el tamaño, salirse de
+los topes, meterse debajo del fondo ni taparle el título.
+
+- **COMPOSITION-27** — un ajuste desplaza al rol respecto de su slot y su capa decide quién tapa a quién; con los ajustes en cero sale exactamente la misma imagen que sin ellos.
+- **COMPOSITION-28** — un ajuste desmedido se acota a los topes del template en vez de sacar la figura del cuadro, y una capa no puede esconder una figura bajo el fondo ni ponerla sobre el título.
+- **COMPOSITION-29** — los ajustes van en el checksum de la **base**: mover una figura invalida lo de abajo, al revés que el título. Y un ajuste que no mueve nada no produce un checksum distinto.
+
 ## La separación base / final (SPEC §7)
 
 - **COMPOSITION-06** — `base` no lleva logo ni título; `final` sí. Es lo que el modelo recibiría.

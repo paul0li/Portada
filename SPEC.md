@@ -128,6 +128,9 @@ Notes:
   the template, not a knob that lets the layout drift (§11.1, §11.3).
 - **The numbers above live in one template file.** Editing them changes every future thumbnail at
   once. That file *is* the show's visual identity, and it's the only place layout is decided.
+- **An episode may nudge a figure.** `conductor`, `invitado` and `objeto` can be offset in x/y and
+  reordered among themselves, in steps and within limits the template sets (§11.1). A nudge can't
+  resize anything, can't leave the limits, and can't slip under the background or over the title.
 
 ## 7. The pipeline
 
@@ -198,8 +201,13 @@ already looking at.
 
 ## 11. Product rules
 
-1. **Layout is fixed; only content varies.** The template is authored once per show and is the
-   product's guarantee of consistency.
+1. **Layout belongs to the template; an episode may nudge, not rearrange.** The template is
+   authored once per show and is the product's guarantee of consistency. What an episode can change
+   is short, named in the template, and bounded by it: which of the two palette gradients answers
+   "no background", and — for the three figures — an offset in x/y plus their order among
+   themselves. Sizes, slots, typography, the title block and everything else stay in the file.
+   "Fixed" was too fixed: with real photos the guest sometimes ends up hidden, and fixing that one
+   thumbnail meant editing the template and changing the whole channel.
 2. **The app composes. The AI finishes.** The model never decides placement, never sees the logo or
    the title, and never runs more than once per attempt.
 3. **The AI decides; a script executes.** Wherever a model is given a choice — now, or in any module
