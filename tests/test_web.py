@@ -499,6 +499,62 @@ def test_web_37_el_fondo_por_defecto_se_elige_en_su_paso(client, imagen):
     )
 
 
+def test_web_38_empujo_una_figura_desde_su_paso(client, imagen):
+    """Mover sin salir del paso, con el preview delante y sin una línea de JS.
+
+    Se comprueban las tres cosas del criterio: que el toque no me saca del paso,
+    que la elección sobrevive hasta el armado, y que en el tope el empujón deja
+    de ofrecerse en vez de quedarse sin hacer nada.
+    """
+    from PIL import Image
+
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    paso1 = f"/nueva?paso=1&conductor={ids['conductor']}"
+
+    pagina = client.get(paso1)
+    assert pagina.status_code == 200
+    toque = re.search(r'href="(/nueva\?[^"]*ajuste=conductor[^"]*)"', pagina.text)
+    assert toque, "el paso del conductor no ofrece empujarlo"
+
+    movido = client.get(toque.group(1).replace("&amp;", "&"))
+    assert movido.status_code == 200
+    assert "paso=2" in movido.text, "empujar me sacó del paso en vez de repintarlo"
+    assert ids["conductor"] in movido.text, "empujar se llevó por delante lo elegido"
+    assert re.search(r'id="preview" src="[^"]*ajuste=conductor', movido.text), (
+        "el preview no enseña el empujón"
+    )
+
+    # En el tope, ese empujón deja de ofrecerse: un botón que no puede mover
+    # nada es un botón que miente.
+    from app.domains.composition import api as composition
+
+    en_el_tope = client.get(
+        "/nueva",
+        params={
+            "paso": 1,
+            "conductor": ids["conductor"],
+            "ajuste": f"conductor:{composition.AJUSTES.max_x},0,0",
+        },
+    )
+    derechas = re.findall(r'aria-label="Derecha"', en_el_tope.text)
+    izquierdas = re.findall(r'aria-label="Izquierda"', en_el_tope.text)
+    assert not derechas, "ofrece seguir empujando más allá del tope"
+    assert izquierdas, "en el tope se quedó sin forma de volver"
+
+    # Y llega al armado, que es lo único que cuenta.
+    def _png(**extra):
+        creado = _armar(client, {"conductor": ids["conductor"]}, **extra)
+        assert creado.status_code in (302, 303), creado.text[:400]
+        episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+        return client.get(f"/episodes/{episode_id}/assembly/file").content
+
+    quieto = _png()
+    empujado = _png(ajuste="conductor:-120,0,0")
+    assert Image.open(io.BytesIO(empujado)).size == (1280, 720)
+    assert empujado != quieto, "el empujón no llegó a la miniatura"
+
+
 # --- el preview en vivo --------------------------------------------------
 
 

@@ -95,6 +95,30 @@ def _validate_degradado(degradado: str) -> str:
     return degradado
 
 
+def _validate_ajustes(
+    ajustes: dict[str, composition.Ajuste] | None,
+) -> dict[str, composition.Ajuste]:
+    """Los empujones, acotados a los topes del template.
+
+    Un rol que no se puede mover es un 422 y no un ajuste ignorado: pedir mover
+    el marco y que no pase nada es la clase de botón que miente. Los NÚMEROS, en
+    cambio, se acotan en vez de rechazarse -- lo que el template dice es hasta
+    dónde llega un empujón, no cuál es un empujón inválido -- y se guardan ya
+    acotados, para que la fila diga lo que se va a dibujar.
+    """
+    limpios: dict[str, composition.Ajuste] = {}
+    for role, ajuste in (ajustes or {}).items():
+        if role not in composition.ROLES_MOVIBLES:
+            raise errors.SeleccionInvalida(
+                f"Ese rol no se puede mover: {role!r}.",
+                details={"role": role, "valid": list(composition.ROLES_MOVIBLES)},
+            )
+        acotado = composition.acotar(role, ajuste)
+        if acotado != composition.SIN_AJUSTE:
+            limpios[role] = acotado
+    return limpios
+
+
 def create_episode(
     db: Database,
     *,
@@ -103,6 +127,7 @@ def create_episode(
     selection: dict[str, list[str]],
     strength: str = finishing.DEFAULT_STRENGTH,
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
+    ajustes: dict[str, composition.Ajuste] | None = None,
 ) -> repo.Episode:
     if strength not in finishing.STRENGTHS:
         raise errors.SeleccionInvalida(
@@ -110,6 +135,7 @@ def create_episode(
             details={"valid": list(finishing.STRENGTHS)},
         )
     _validate_degradado(degradado)
+    limpios = _validate_ajustes(ajustes)
     limpia = _validate_selection(db, user_id=user_id, selection=selection)
 
     with db.transaction() as conn:
@@ -120,6 +146,7 @@ def create_episode(
             strength=strength,
             degradado=degradado,
             selection=limpia,
+            ajustes=limpios,
         )
     log.info(
         "episodes.created",
@@ -172,6 +199,7 @@ def _brief_de(
     slots: dict[str, list[str]],
     title: str,
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
+    ajustes: dict[str, composition.Ajuste] | None = None,
     referencia: str = "",
 ) -> composition.Brief:
     """Resuelve una seleccion a rutas de archivo.
@@ -195,7 +223,9 @@ def _brief_de(
             rutas.append(intake.path(settings, media))
         if rutas:
             photos[role] = rutas
-    return composition.Brief(title=title, photos=photos, degradado=degradado)
+    return composition.Brief(
+        title=title, photos=photos, degradado=degradado, ajustes=dict(ajustes or {})
+    )
 
 
 def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> composition.Brief:
@@ -206,6 +236,7 @@ def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> com
         slots=episode.slots,
         title=episode.title,
         degradado=episode.degradado,
+        ajustes=episode.ajustes,
         referencia=episode.id,
     )
 
@@ -218,6 +249,7 @@ def preview(
     selection: dict[str, list[str]],
     title: str,
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
+    ajustes: dict[str, composition.Ajuste] | None = None,
 ) -> bytes:
     """La miniatura en pequeno de una seleccion que todavia no es un episodio.
 
@@ -230,7 +262,15 @@ def preview(
     conductor, y eso no es un error, es el paso 1.
     """
     limpia = _validate_selection(db, user_id=user_id, selection=selection, exigir_minimos=False)
-    brief = _brief_de(db, settings, user_id=user_id, slots=limpia, title=title, degradado=degradado)
+    brief = _brief_de(
+        db,
+        settings,
+        user_id=user_id,
+        slots=limpia,
+        title=title,
+        degradado=degradado,
+        ajustes=_validate_ajustes(ajustes),
+    )
     return composition.preview(brief)
 
 

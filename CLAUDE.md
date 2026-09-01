@@ -8,7 +8,7 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 **El frontend está terminado: Portada se usa de punta a punta.** Inicio con el
 punto de entrada y los recientes, la librería, el flujo de cinco pasos con el
 preview en vivo, el resultado descargable y el historial. Desde el teléfono, en
-la LAN, sin nube. **200 tests.**
+la LAN, sin nube. **205 tests.**
 
 Corregir una errata cuesta **89 ms y no 287**: el título es *overlay*, así que se
 pega sobre la misma base, que sigue en la caché (SPEC §7③). Eso valía para el
@@ -171,7 +171,10 @@ Romper una de estas es un bug, no una decisión de diseño.
   Por eso `finishing.NoopFinisher` es la implementación por defecto, y es la que
   corre en todos los tests: el camino sin IA no es un fallback, es el camino normal.
 - El logo y el título nunca pasan por un modelo (§11.5, §11.6).
-- El layout vive en un solo archivo: `composition/template.py` (§6).
+- El layout vive en un solo archivo: `composition/template.py` (§6). Un episodio
+  puede empujar una figura, pero **hasta dónde y de cuánto en cuánto también lo
+  dice ese archivo**: el día que el ajuste se decida en otro sitio, el layout
+  dejó de vivir en un archivo aunque el archivo siga ahí.
 - El `marco` es mobiliario de marca: va en el *overlay* junto al logo y el
   título, nunca en la base, y por tanto nunca pasa por un modelo. Pero es un
   asset del show, no un número del template: vive en la librería, como el logo.
@@ -248,6 +251,7 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-30 | **El título se ancla a la línea base**, no a la ascendente | La ascendente la elige cada tipografía a su gusto; anclar a ella hacía que `bottom=500` significara una altura distinta según la fuente | Nada: la línea base es lo que «se apoya en y=500» quiere decir |
 | 2026-08-31 | **La URL del armado se revalida, no se cachea un año** | Es un PUNTERO al último armado, no un archivo: corregir el título produce otro. Con `immutable` el navegador hacía lo correcto —no volver a pedirla— y la miniatura vieja se quedaba en pantalla. `no-cache` + `ETag` cuesta un 304 (3,4 ms) y nunca miente. Lo mismo en `/photos/{id}/file`, que sirve el recorte si está listo y si no el original | Que las URLs pasen a llevar el hash del contenido. Entonces sí son inmutables y el año vuelve |
 | 2026-08-31 | **El historial es una lista de una columna, no una rejilla de dos** | A 430 px, dos miniaturas 16:9 por línea son 96 px de ancho, y a ese tamaño no se reconoce cuál es cuál — que es lo único que un historial tiene que hacer | Una pantalla ancha de verdad, no un teléfono |
+| 2026-09-01 | **Un episodio puede empujar una figura, en x/y y en capa** (template v6) | «El layout es fijo» resultó demasiado fijo: con fotos reales el invitado queda tapado o un objeto pisa el título, y arreglarlo pedía editar `template.py` — cambiar el canal entero para arreglar UNA miniatura. Es un empujón acotado y no colocar libremente: pasos de 20 px, topes de ±400/±200, y la capa efectiva encerrada entre el fondo y el título. Los límites los pone el template, así que sigue siendo él quien decide cuánta libertad hay (SPEC §11.1). En pantalla son enlaces al mismo paso —el borrador ya vivía en la URL— así que sigue sin haber una línea de JS, y en un tope el botón desaparece en vez de no hacer nada | Que haga falta colocar de verdad —arrastrar, rotar, escalar—. Ahí sí vuelve la isla de JS que la decisión de «fuera htmx» tenía como condición, y el ajuste deja de caber en una URL |
 | 2026-09-01 | **El fondo por defecto se elige por episodio: claro u oscuro** (template v5) | El claro se lee peor con el título blanco (ver la fila de abajo) y el oscuro se come una foto de conductor oscura: cuál conviene lo decide la miniatura de la semana, no el archivo. Los dos degradados los autora `template.py`, así que sigue siendo una lista cerrada de nombres y no una perilla libre (SPEC §11.1 y §11.3). Se elige con dos enlaces en el paso del fondo —el borrador vive en la URL, así que se deshace con «atrás» y no costó una línea de JS— y va en el checksum de la BASE, al revés que el título: cambiar de fondo cuesta una composición entera (~250 ms) porque se dibuja debajo de todo | Que un show quiera un fondo que no sea ninguno de los dos. Entonces el fondo es un asset de la librería, como el marco, y esto se convierte en un rol más |
 | 2026-08-31 | **El fondo por defecto es claro** (degradado `(238,240,245)→(188,194,208)`) | Es el fondo que se ve cuando el episodio no trae foto, o sea el caso normal. Sigue siendo neutro frío por lo mismo que en v2: el rojo del acento y el del marco tienen que ser lo único rojo. Cuesta algo: el título es blanco con contorno oscuro, así que sobre claro se lee por el contorno y no por el relleno — comprobado a 320 px, que es como se ve en un feed | Que el título deje de ser blanco. Un título oscuro se leería mejor sobre este degradado, pero peor sobre una foto de fondo, que ya va oscurecida |
 | 2026-08-31 | **Fuera htmx: HTML del servidor y ~15 líneas de JS** | Se vendorizó en la fase 1 y al terminar la 3 no lo usaba ni un atributo: todo son formularios y enlaces. Lo único que una navegación no puede hacer es repintar mientras se teclea, y eso son 15 líneas. 50 KB de dependencia para eso es peor que no tenerla | Que aparezcan muchos intercambios parciales — el A/B del resultado, reordenar objetos. Con tres o cuatro, htmx vuelve y se nota |

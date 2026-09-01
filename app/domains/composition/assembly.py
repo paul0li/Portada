@@ -28,6 +28,7 @@ from app.domains.composition import fonts, typography
 from app.domains.composition.template import (
     BASE_ROLES,
     DEGRADADO_POR_DEFECTO,
+    ROLES_MOVIBLES,
     TEMPLATE,
     BackgroundTreatment,
     Palette,
@@ -41,6 +42,26 @@ from app.domains.composition.template import (
 # diferencia entre un preview que sigue al dedo y uno que llega tarde.
 PREVIEW_SIZE = (640, 360)
 PREVIEW_QUALITY = 82
+
+
+@dataclass(frozen=True, slots=True)
+class Ajuste:
+    """El empujon de UN rol: cuanto se mueve y en que capa queda.
+
+    `capa` es relativa a la del template, no absoluta: `+1` es "adelante de
+    donde estabas". Asi el cero significa "como manda el template" y el dia que
+    cambie el z de un slot, un episodio ajustado se mueve con el, en vez de
+    quedarse clavado en un numero que ya no significa lo mismo.
+    """
+
+    dx: int = 0
+    dy: int = 0
+    capa: int = 0
+
+
+# "Donde diga el template". Es un singleton y no un `Ajuste()` por llamada para
+# poder usarlo de valor por defecto y de comparacion sin construir nada.
+SIN_AJUSTE = Ajuste()
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +79,9 @@ class Brief:
     title: str = ""
     photos: Mapping[str, Sequence[Path]] = field(default_factory=dict)
     degradado: str = DEGRADADO_POR_DEFECTO
+    # Rol -> empujon. Un rol ausente es "donde diga el template", que es el caso
+    # normal: los ajustes son la excepcion de una semana, no el estado habitual.
+    ajustes: Mapping[str, Ajuste] = field(default_factory=dict)
 
     def for_role(self, role: str) -> list[Path]:
         return list(self.photos.get(role, ()))
@@ -74,6 +98,42 @@ class Composition:
 
 
 # --- utilidades de imagen ------------------------------------------------
+
+
+def _entre(valor: int, tope: int) -> int:
+    return max(-tope, min(tope, valor))
+
+
+def acotar(role: str, ajuste: Ajuste, template: Template = TEMPLATE) -> Ajuste:
+    """El mismo ajuste dentro de los topes del template.
+
+    Se acota aqui y no solo en quien lo recibe porque este modulo tiene que
+    poder dibujar cualquier brief (SPEC 11.4): un numero absurdo mueve la figura
+    hasta el tope y ya, nunca la saca del cuadro ni lanza.
+    """
+    if role not in ROLES_MOVIBLES:
+        return SIN_AJUSTE
+    limites = template.ajustes
+    slot = template.slots[role]
+    capa = min(max(slot.z + ajuste.capa, limites.capa_min), limites.capa_max)
+    return Ajuste(
+        dx=_entre(ajuste.dx, limites.max_x),
+        dy=_entre(ajuste.dy, limites.max_y),
+        capa=capa - slot.z,
+    )
+
+
+def ajuste_de(brief: "Brief", role: str, template: Template = TEMPLATE) -> Ajuste:
+    """El ajuste EFECTIVO de un rol: el que se dibuja y el que se hashea.
+
+    Que las dos cosas salgan de la misma funcion es lo que impide que dos briefs
+    que dibujan lo mismo tengan checksums distintos -- o peor, al reves.
+    """
+    return acotar(role, brief.ajustes.get(role, SIN_AJUSTE), template)
+
+
+def _z_efectivo(brief: "Brief", role: str, template: Template) -> int:
+    return template.slots[role].z + ajuste_de(brief, role, template).capa
 
 
 def _open(path: Path) -> Image.Image:
@@ -213,23 +273,35 @@ def _with_shadow(img: Image.Image, palette: Palette) -> Image.Image:
     return lienzo
 
 
-def _paste(canvas: Image.Image, img: Image.Image, slot: Slot, index: int = 0) -> None:
-    """Pega segun el ancla del slot. `index` reparte cuando hay varios objetos."""
+def _paste(
+    canvas: Image.Image,
+    img: Image.Image,
+    slot: Slot,
+    index: int = 0,
+    ajuste: Ajuste = SIN_AJUSTE,
+) -> None:
+    """Pega segun el ancla del slot. `index` reparte cuando hay varios objetos.
+
+    `ajuste` empuja el punto de anclaje, no la imagen: el slot sigue decidiendo
+    COMO se apoya la figura (por su base, por su centro), y el episodio solo
+    mueve donde cae ese punto.
+    """
     if slot.anchor == "top-left":
-        canvas.alpha_composite(img, (slot.x, slot.y))
+        canvas.alpha_composite(img, (slot.x + ajuste.dx, slot.y + ajuste.dy))
         return
 
-    x = slot.x
+    x = slot.x + ajuste.dx
     if slot.max_items > 1:
         # Varios objetos se separan horizontalmente alrededor del centro del slot.
         paso = img.width + 32
         desplazamiento = (index - (slot.max_items - 1) / 2) * paso
-        x = round(slot.x + desplazamiento)
+        x = round(x + desplazamiento)
 
+    y = slot.y + ajuste.dy
     if slot.anchor == "bottom-center":
-        destino = (x - img.width // 2, slot.y - img.height)
+        destino = (x - img.width // 2, y - img.height)
     else:  # center
-        destino = (x - img.width // 2, slot.y - img.height // 2)
+        destino = (x - img.width // 2, y - img.height // 2)
     canvas.alpha_composite(img, destino)
 
 
@@ -247,10 +319,28 @@ def _draw_base(brief: Brief, template: Template) -> Image.Image:
     else:
         canvas.alpha_composite(_gradient(template.canvas, template.palette, brief.degradado))
 
-    for role in BASE_ROLES:
-        if role == "fondo":
-            continue  # ya esta puesto, y no es un recorte
+    # El orden de dibujo sale de la capa EFECTIVA, no del z del template: es lo
+    # que deja que un episodio ponga al invitado delante del conductor sin tocar
+    # el archivo.
+    #
+    # El desempate es el propio empujon, y no solo el z del template, porque el
+    # z de las tres figuras va de uno en uno: con el template desempatando, un
+    # toque de "atras" empataba al conductor con el invitado y NO cambiaba nada
+    # -- hacian falta dos para ver algo, o sea que el primero era un boton que
+    # miente. Empatados, manda quien se movio hacia adelante; y a igualdad de
+    # empujon, el template. Es un orden total, asi que el armado sigue siendo
+    # determinista.
+    figuras = [role for role in BASE_ROLES if role != "fondo"]
+    for role in sorted(
+        figuras,
+        key=lambda r: (
+            _z_efectivo(brief, r, template),
+            ajuste_de(brief, r, template).capa,
+            template.slots[r].z,
+        ),
+    ):
         slot = template.slots[role]
+        ajuste = ajuste_de(brief, role, template)
         for index, path in enumerate(brief.for_role(role)[: slot.max_items]):
             # Se recorta al sujeto ANTES de escalar: el slot mide la persona.
             img = _trim_alpha(_open(path))
@@ -262,7 +352,7 @@ def _draw_base(brief: Brief, template: Template) -> Image.Image:
                 )
             if slot.shadow:
                 img = _with_shadow(img, template.palette)
-            _paste(canvas, img, slot, index)
+            _paste(canvas, img, slot, index, ajuste)
 
     return canvas
 
@@ -415,6 +505,21 @@ def preview(brief: Brief, template: Template = TEMPLATE) -> bytes:
     return _to_jpeg(canvas.resize(PREVIEW_SIZE, Image.LANCZOS))
 
 
+def _huella_de_ajustes(digest, brief: Brief, template: Template) -> None:
+    """Los ajustes que MUEVEN algo, ya acotados.
+
+    Se hashea el efecto y no lo pedido: dos empujones desmedidos que acaban en
+    el mismo tope dibujan la misma imagen, y tienen que dar el mismo checksum.
+    Y un ajuste que no mueve nada no se escribe, para que pedirlo en cero sea
+    indistinguible de no pedirlo -- que es lo que es.
+    """
+    for role in sorted(ROLES_MOVIBLES):
+        ajuste = ajuste_de(brief, role, template)
+        if ajuste == SIN_AJUSTE:
+            continue
+        digest.update(f"\najuste:{role}={ajuste.dx},{ajuste.dy},{ajuste.capa}".encode())
+
+
 def _huella_de_fotos(digest, brief: Brief, roles) -> None:
     for role in sorted(roles):
         rutas = brief.photos.get(role)
@@ -438,6 +543,7 @@ def base_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
     # invalida la base. Es lo contrario del titulo, y por eso cambiar de fondo
     # cuesta una composicion entera y corregir una errata no.
     digest.update(f"degradado={brief.degradado}\n".encode())
+    _huella_de_ajustes(digest, brief, template)
     _huella_de_fotos(digest, brief, BASE_ROLES)
     return digest.hexdigest()
 
@@ -453,6 +559,7 @@ def brief_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
     digest.update(f"v{template.version}\n".encode())
     digest.update(typography.normalize(brief.title, template.typography).encode())
     digest.update(f"\ndegradado={brief.degradado}".encode())
+    _huella_de_ajustes(digest, brief, template)
     for role in sorted(brief.photos):
         nombres = sorted(Path(p).name for p in brief.photos[role])
         digest.update(f"\n{role}={','.join(nombres)}".encode())

@@ -14,6 +14,7 @@ Tres cosas, y solo tres, separan a este router del de la API:
 3. **Después de un POST se redirige.** Recargar no vuelve a subir la foto.
 """
 
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlencode
@@ -201,20 +202,80 @@ def _contexto_libreria(db, settings, user_id: str, role: str, **extra) -> dict:
     }
 
 
-def _seleccion(params) -> dict[str, list[str]]:
-    """La selección en curso, leída de la URL.
+@dataclass(frozen=True, slots=True)
+class Borrador:
+    """Lo que llevo elegido: fotos, fondo y empujones.
 
-    El borrador del flujo vive en la barra de direcciones y no en el servidor:
-    no hace falta una tabla de borradores, atrás y recargar funcionan solos, y
-    no hay nada escondido. Son ids opacos del propio usuario sobre páginas
-    `no-store`.
+    Vive entero en la barra de direcciones y no en el servidor: no hace falta
+    una tabla de borradores, atrás y recargar funcionan solos, y no hay nada
+    escondido. Son ids opacos del propio usuario sobre páginas `no-store`.
+
+    Es un objeto y no tres argumentos sueltos porque ya son tres: cada vez que
+    el borrador crece, un `_url_*` al que se le olvide uno pierde en silencio lo
+    que la persona acababa de elegir.
     """
+
+    seleccion: dict[str, list[str]] = field(default_factory=dict)
+    degradado: str = episodes.DEGRADADO_POR_DEFECTO
+    ajustes: dict[str, episodes.Ajuste] = field(default_factory=dict)
+
+    def con(self, **cambios) -> "Borrador":
+        return replace(self, **cambios)
+
+    def ajuste(self, role: str) -> episodes.Ajuste:
+        return self.ajustes.get(role, episodes.SIN_AJUSTE)
+
+    def con_ajuste(self, role: str, ajuste: episodes.Ajuste) -> "Borrador":
+        """El mismo borrador con ese rol movido. Un ajuste nulo se borra."""
+        ajustes = {r: a for r, a in self.ajustes.items() if r != role}
+        acotado = episodes.acotar(role, ajuste)
+        if acotado != episodes.SIN_AJUSTE:
+            ajustes[role] = acotado
+        return replace(self, ajustes=ajustes)
+
+    def pares(self) -> list[tuple[str, str]]:
+        """Los campos de la URL: una foto por par, más un ajuste por rol movido."""
+        fotos = [(role, pid) for role, ids in self.seleccion.items() for pid in ids]
+        movidos = [
+            ("ajuste", f"{role}:{a.dx},{a.dy},{a.capa}") for role, a in sorted(self.ajustes.items())
+        ]
+        return [*fotos, *movidos]
+
+
+def _seleccion(params) -> dict[str, list[str]]:
+    """La selección en curso, leída de la URL."""
     elegido: dict[str, list[str]] = {}
     for role in ORDEN_ROLES:
         valores = [v for v in params.getlist(role) if v]
         if valores:
             elegido[role] = valores[: episodes.MAXIMOS.get(role, 1)]
     return elegido
+
+
+def _lee_ajustes(valores) -> dict[str, episodes.Ajuste]:
+    """`ajuste=conductor:40,-20,1`, tantos como roles movidos.
+
+    Lo que no se entiende se ignora: esto viene de la barra de direcciones, que
+    la escribe cualquiera, y un borrador ilegible no es un error — es un
+    borrador sin ese empujón. Quien sí rechaza un rol que no se mueve es
+    `episodes`, al crear el episodio.
+    """
+    leidos: dict[str, episodes.Ajuste] = {}
+    for texto in valores:
+        role, _, numeros = str(texto).partition(":")
+        if role not in episodes.ROLES_MOVIBLES:
+            continue
+        partes = numeros.split(",")
+        if len(partes) != 3:
+            continue
+        try:
+            dx, dy, capa = (int(p) for p in partes)
+        except ValueError:
+            continue
+        acotado = episodes.acotar(role, episodes.Ajuste(dx=dx, dy=dy, capa=capa))
+        if acotado != episodes.SIN_AJUSTE:
+            leidos[role] = acotado
+    return leidos
 
 
 def _muestra(nombre: str) -> str:
@@ -240,30 +301,75 @@ def _degradado(params) -> str:
     return pedido if pedido in episodes.DEGRADADOS else episodes.DEGRADADO_POR_DEFECTO
 
 
-def _url_flujo(paso: int, seleccion: dict[str, list[str]], degradado: str) -> str:
-    return "/nueva?" + urlencode([("paso", paso), *_pares(seleccion), ("degradado", degradado)])
+def _borrador(params) -> Borrador:
+    """Todo el borrador, leído de la URL de una vez."""
+    return Borrador(
+        seleccion=_seleccion(params),
+        degradado=_degradado(params),
+        ajustes=_lee_ajustes(params.getlist("ajuste")),
+    )
 
 
-def _pares(seleccion: dict[str, list[str]]) -> list[tuple[str, str]]:
-    return [(role, photo_id) for role, ids in seleccion.items() for photo_id in ids]
+# El pad, en dos filas. Las flechas mueven; la capa se dice con palabras.
+# Con glifos para las dos cosas — ↑ para arriba y ⤒ para adelante — a un golpe
+# de vista no se distingue mover de cambiar de capa, que son cosas distintas.
+EMPUJONES = (
+    ("mover", "←", "Izquierda", -1, 0, 0),
+    ("mover", "→", "Derecha", 1, 0, 0),
+    ("mover", "↑", "Arriba", 0, -1, 0),
+    ("mover", "↓", "Abajo", 0, 1, 0),
+    ("capa", "Atrás", "Atrás", 0, 0, -1),
+    ("capa", "Adelante", "Adelante", 0, 0, 1),
+)
 
 
-def _url_preview(
-    seleccion: dict[str, list[str]],
-    title: str = "",
-    degradado: str = "",
-) -> str:
+def _empujones(paso: int, borrador: Borrador, role: str) -> dict[str, list[dict]]:
+    """El pad de esta figura: enlaces al MISMO paso, más «como estaba».
+
+    En un tope el enlace desaparece en vez de quedarse sin hacer nada: `acotar`
+    devuelve el mismo ajuste, así que el toque no cambiaría nada y un botón que
+    no puede hacer nada es un botón que miente.
+    """
+    if role not in episodes.ROLES_MOVIBLES:
+        return {}
+
+    actual = borrador.ajuste(role)
+    salto = episodes.AJUSTES.paso
+    pad: dict[str, list[dict]] = {"mover": [], "capa": []}
+    for grupo, etiqueta, titulo, mx, my, mc in EMPUJONES:
+        pedido = episodes.Ajuste(
+            dx=actual.dx + mx * salto, dy=actual.dy + my * salto, capa=actual.capa + mc
+        )
+        movido = borrador.con_ajuste(role, pedido)
+        if movido.ajuste(role) == actual:
+            continue  # el tope: ese toque no movería nada
+        pad[grupo].append({"etiqueta": etiqueta, "titulo": titulo, "url": _url_flujo(paso, movido)})
+
+    if actual != episodes.SIN_AJUSTE:
+        pad["capa"].append(
+            {
+                "etiqueta": "Como estaba",
+                "titulo": "Como estaba",
+                "url": _url_flujo(paso, borrador.con_ajuste(role, episodes.SIN_AJUSTE)),
+            }
+        )
+    return pad
+
+
+def _url_flujo(paso: int, borrador: Borrador) -> str:
+    return "/nueva?" + urlencode(
+        [("paso", paso), *borrador.pares(), ("degradado", borrador.degradado)]
+    )
+
+
+def _url_preview(borrador: Borrador, title: str = "") -> str:
     """El `<img src>` del paso. Lleva lo mismo que la página, más el título.
 
     El título va SIEMPRE el último: la isla de JS que repinta mientras se teclea
     corta la URL por `&title=` y le pega lo tecleado.
     """
     return "/nueva/preview.jpg?" + urlencode(
-        [
-            *_pares(seleccion),
-            ("degradado", degradado or episodes.DEGRADADO_POR_DEFECTO),
-            ("title", title),
-        ]
+        [*borrador.pares(), ("degradado", borrador.degradado), ("title", title)]
     )
 
 
@@ -559,8 +665,10 @@ def preview(
     if user_id is None:
         return Response(status_code=401, headers=SIN_CACHE)
 
-    seleccion = _seleccion(request.query_params)
-    seleccion |= {role: [foto["id"]] for role, foto in _marca(db, settings, user_id).items()}
+    borrador = _borrador(request.query_params)
+    seleccion = borrador.seleccion | {
+        role: [foto["id"]] for role, foto in _marca(db, settings, user_id).items()
+    }
     try:
         jpeg = episodes.preview(
             db,
@@ -568,7 +676,8 @@ def preview(
             user_id=user_id,
             selection=seleccion,
             title=title,
-            degradado=_degradado(request.query_params),
+            degradado=borrador.degradado,
+            ajustes=borrador.ajustes,
         )
     except AppError:
         # SPEC §11.4 llevado a la UI: el preview es mejora, nunca dependencia.
@@ -587,17 +696,16 @@ def flujo(
         return _a_entrar()
 
     paso = max(1, min(paso, len(PASOS)))
-    seleccion = _seleccion(request.query_params)
-    degradado = _degradado(request.query_params)
+    borrador = _borrador(request.query_params)
+    seleccion = borrador.seleccion
     role = PASOS[paso - 1]
     marca = _marca(db, settings, user_id)
+    con_marca = borrador.con(seleccion=seleccion | {r: [f["id"]] for r, f in marca.items()})
 
     contexto = {
         "paso": paso,
         "total": len(PASOS),
-        "preview": _url_preview(
-            seleccion | {r: [f["id"]] for r, f in marca.items()}, degradado=degradado
-        ),
+        "preview": _url_preview(con_marca),
         "role": role,
         "etiquetas": ETIQUETAS,
         "ayudas": AYUDAS,
@@ -605,9 +713,10 @@ def flujo(
         "marca": marca,
         "intensidades": episodes.STRENGTHS,
         "intensidad": episodes.DEFAULT_STRENGTH,
-        "degradado": degradado,
-        "atras": _url_flujo(paso - 1, seleccion, degradado) if paso > 1 else "/",
-        "campos": _pares(seleccion),
+        "degradado": borrador.degradado,
+        "movidas": sorted(borrador.ajustes),
+        "atras": _url_flujo(paso - 1, borrador) if paso > 1 else "/",
+        "campos": borrador.pares(),
     }
 
     if role == "titulo":
@@ -631,16 +740,20 @@ def flujo(
         else:
             siguiente[role] = ([*siguiente.get(role, []), photo.id])[-tope:]
         datos["puesta"] = puesta
-        datos["toque"] = _url_flujo(paso, siguiente, degradado)
+        datos["toque"] = _url_flujo(paso, borrador.con(seleccion=siguiente))
         tarjetas.append(datos)
 
     contexto |= {
-        "aqui": _url_flujo(paso, seleccion, degradado),
+        "aqui": _url_flujo(paso, borrador),
         "fotos": tarjetas,
         "elegidas": len(elegidas),
         "obligatorio": role in episodes.MINIMOS,
-        "siguiente": _url_flujo(paso + 1, seleccion, degradado),
+        "siguiente": _url_flujo(paso + 1, borrador),
         "roles_con_recorte": library.ROLES_CON_RECORTE,
+        # Empujar esta figura: solo si es de las que se mueven y hay algo que
+        # mover. Un pad de flechas sobre un paso vacío no movería nada.
+        "empujones": _empujones(paso, borrador, role) if elegidas else {},
+        "ajuste": borrador.ajuste(role),
         # Las dos opciones de fondo, como enlaces al MISMO paso: tocarlas no
         # avanza, repinta. Son enlaces y no radios porque el borrador vive en la
         # URL -- así elegir fondo se deshace con «atrás», como todo lo demás.
@@ -648,8 +761,8 @@ def flujo(
             {
                 "nombre": nombre,
                 "muestra": _muestra(nombre),
-                "puesto": nombre == degradado,
-                "url": _url_flujo(paso, seleccion, nombre),
+                "puesto": nombre == borrador.degradado,
+                "url": _url_flujo(paso, borrador.con(degradado=nombre)),
             }
             for nombre in episodes.DEGRADADOS
         ]
@@ -672,6 +785,8 @@ def crear(
     title: Annotated[str, Form()] = "",
     strength: Annotated[str, Form()] = episodes.DEFAULT_STRENGTH,
     degradado: Annotated[str, Form()] = episodes.DEGRADADO_POR_DEFECTO,
+    # Los empujones viajan como texto, uno por rol movido: `conductor:40,-20,1`.
+    ajuste: Annotated[list[str], Form()] = [],  # noqa: B006
     # Los roles se declaran uno a uno en vez de leer el formulario entero: en una
     # ruta síncrona no se puede `await request.form()`, y además así la firma
     # dice exactamente qué acepta este endpoint. Lo que no está aquí no entra
@@ -702,6 +817,7 @@ def crear(
     }
     marca = _marca(db, settings, user_id)
     seleccion = dict(formulario) | {role: [foto["id"]] for role, foto in marca.items()}
+    ajustes = _lee_ajustes(ajuste)
 
     try:
         episode = episodes.create_episode(
@@ -711,6 +827,7 @@ def crear(
             selection=seleccion,
             strength=strength,
             degradado=degradado,
+            ajustes=ajustes,
         )
         episodes.build_assembly(
             db,
@@ -722,6 +839,7 @@ def crear(
     except AppError as error:
         # Se vuelve al último paso con el error puesto, en vez de a una página de
         # fallo: lo elegido sigue ahí y solo falta corregir una cosa.
+        fallido = Borrador(seleccion=formulario, degradado=degradado, ajustes=ajustes)
         return _pagina(
             request,
             "flujo_titulo.html",
@@ -736,11 +854,15 @@ def crear(
                 "intensidades": episodes.STRENGTHS,
                 "intensidad": strength,
                 "degradado": degradado,
+                "movidas": sorted(ajustes),
                 "titulo": title,
-                "atras": _url_flujo(len(PASOS) - 1, formulario, degradado),
-                "campos": _pares(formulario),
+                "atras": _url_flujo(len(PASOS) - 1, fallido),
+                "campos": fallido.pares(),
                 "preview": _url_preview(
-                    formulario | {r: [f["id"]] for r, f in marca.items()}, title, degradado
+                    fallido.con(
+                        seleccion=fallido.seleccion | {r: [f["id"]] for r, f in marca.items()}
+                    ),
+                    title,
                 ),
                 "error": _mensaje(error),
             },
@@ -769,6 +891,9 @@ def resultado(
                 continue  # borrada de la librería: el episodio sigue valiendo
             usadas.append((ETIQUETAS[role], photo.label or ETIQUETAS[role].lower()))
 
+    armado_borrador = Borrador(
+        seleccion=episode.slots, degradado=episode.degradado, ajustes=episode.ajustes
+    )
     return _pagina(
         request,
         "resultado.html",
@@ -776,12 +901,13 @@ def resultado(
             "episode": episode,
             "armado": armado,
             "usadas": usadas,
-            "editar": _url_flujo(1, episode.slots, episode.degradado),
-            "preview": _url_preview(episode.slots, episode.title, episode.degradado),
+            "editar": _url_flujo(1, armado_borrador),
+            "preview": _url_preview(armado_borrador, episode.title),
             # Se dice cuál fondo se usó, por lo mismo que se dice la marca: una
             # entrada invisible en el checksum del armado sería peor que un dato
             # de más. Solo cuando se ve, que es cuando no hay foto de fondo.
             "fondo_por_defecto": "" if episode.slots.get("fondo") else episode.degradado,
+            "movidas": sorted(episode.ajustes),
         },
     )
 

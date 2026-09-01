@@ -544,6 +544,26 @@ a.opcion[aria-current="true"] {
   font-weight: 600;
 }
 
+/* El pad para empujar una figura. Reusa `.opcion` porque es lo mismo: una fila
+   de toques del ancho del dedo. Los seis caben en una línea a 375px. */
+.empujar {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.empujar .fila {
+  display: flex;
+  gap: 6px;
+}
+
+/* Las flechas piden ser grandes; «Atrás/Adelante» piden caber. */
+.empujar .opcion {
+  font-size: 15px;
+  line-height: 1;
+}
+
 /* La muestra del degradado. El `background` lo pone el router con los colores
    de la paleta: escribirlos aquí sería una segunda verdad que se desincroniza
    el día que el template cambie de fondo, y en silencio. Existe para que elegir
