@@ -418,8 +418,15 @@ def test_web_20_subo_al_invitado_sin_salirme_del_flujo(client, imagen):
     )
 
     assert subida.status_code in (302, 303)
-    assert subida.headers["location"] == paso, "me sacó del flujo"
-    vuelta = client.get(subida.headers["location"])
+    destino = subida.headers["location"]
+    # La vuelta trae `&nueva=` para abrir el modal ENCIMA del paso. Eso no es
+    # salirse del flujo: el paso y el borrador siguen intactos, y es lo que se
+    # compara. Comparar la URL entera haria fallar este test cada vez que el
+    # modal agregue algo, sin que nada del flujo haya cambiado.
+    sin_modal = "&".join(p for p in destino.split("&") if not p.startswith("nueva="))
+    assert sin_modal == paso, "me sacó del flujo"
+    assert "nueva=" in destino, "subir no abrió el modal de la foto recién subida"
+    vuelta = client.get(destino)
     assert "invitada nueva" in vuelta.text
     assert ids["conductor"] in vuelta.text, "se perdió lo ya elegido"
 
@@ -650,3 +657,100 @@ def test_web_32_no_puedo_tocar_el_episodio_de_otro(client, imagen):
 
     assert ajeno.status_code not in (302, 303), "dejo cambiar el titulo de otra persona"
     assert client.get(f"/episodios/{episode_id}", follow_redirects=False).status_code == 404
+
+
+# --- sacarle el fondo ----------------------------------------------------
+
+
+class _Recortador:
+    """Produce un archivo NUEVO: es lo que distingue un recorte de no hacer nada."""
+
+    name = "de-mentira"
+    quita_fondo = True
+
+    def cutout(self, source):
+        import tempfile
+        from pathlib import Path as P
+
+        from PIL import Image
+
+        destino = P(tempfile.mkdtemp()) / "recorte.png"
+        with Image.open(source) as img:
+            recortada = img.convert("RGBA")
+            recortada.putalpha(128)
+            recortada.save(destino, "PNG")
+        return destino
+
+
+def _subir_y_abrir_modal(client, imagen, role="conductor"):
+    """Sube y devuelve (photo_id, html del modal). El modal vive en la URL."""
+    respuesta = _subir(client, imagen, role=role)
+    destino = respuesta.headers["location"]
+    assert "nueva=" in destino, (
+        "subir no abrio el modal: la URL de vuelta no trae la foto recien subida"
+    )
+    photo_id = destino.split("nueva=")[1].split("&")[0]
+    return photo_id, client.get(destino).text
+
+
+def test_web_33_al_subir_aparece_un_modal_con_la_foto(client, imagen, app):
+    _entrar(client)
+    app.state.cutout_provider = _Recortador()
+
+    photo_id, modal = _subir_y_abrir_modal(client, imagen)
+
+    assert f"/photos/{photo_id}/file" in modal, "el modal no muestra la foto recien subida"
+    assert f"/libreria/fotos/{photo_id}/fondo" in modal, "el modal no ofrece quitarle el fondo"
+
+
+def test_web_34_quitar_el_fondo_desde_el_modal_y_deshacerlo(client, imagen, app):
+    _entrar(client)
+    app.state.cutout_provider = _Recortador()
+    photo_id, _ = _subir_y_abrir_modal(client, imagen)
+
+    original = client.get(f"/photos/{photo_id}/file").content
+
+    quitar = client.post(
+        f"/libreria/fotos/{photo_id}/fondo",
+        data={"volver": f"/libreria?nueva={photo_id}"},
+        follow_redirects=False,
+    )
+    assert quitar.status_code in (302, 303)
+    assert client.get(f"/photos/{photo_id}/file").content != original, (
+        "la URL de la foto sigue sirviendo el original"
+    )
+    # Y el modal, todavia abierto, lo dice.
+    assert "Deshacer" in client.get(quitar.headers["location"]).text
+
+    deshacer = client.post(
+        f"/libreria/fotos/{photo_id}/fondo/deshacer",
+        data={"volver": f"/libreria?nueva={photo_id}"},
+        follow_redirects=False,
+    )
+    assert deshacer.status_code in (302, 303)
+    assert client.get(f"/photos/{photo_id}/file").content == original, (
+        "deshacer no devolvio el original"
+    )
+
+
+def test_web_35_a_un_logo_no_se_le_ofrece_quitarle_el_fondo(client, imagen, app):
+    """Es mobiliario de marca: ya viene con su transparencia (SPEC 11.5)."""
+    _entrar(client)
+
+    _, modal = _subir_y_abrir_modal(client, imagen, role="logo")
+
+    assert "/fondo" not in modal, "ofrece quitarle el fondo a un logo"
+
+
+def test_web_36_sin_recorte_activo_el_modal_lo_dice(client, imagen, app):
+    """Con `passthrough` el botón llamaría al recorte, el recorte devolvería la
+    misma imagen, y no pasaría nada. Un botón que no hace nada y no lo dice es
+    peor que no tenerlo: es lo que hace que alguien crea que la app está rota."""
+    _entrar(client)
+    # `passthrough` es el proveedor por defecto, y es el que corre aquí.
+    assert app.state.cutout_provider.quita_fondo is False
+
+    _, modal = _subir_y_abrir_modal(client, imagen)
+
+    assert "/fondo" not in modal, "ofrece un botón que no puede hacer nada"
+    assert "no está activo" in modal, "no dice por qué no está el botón"

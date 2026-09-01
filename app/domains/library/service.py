@@ -56,6 +56,7 @@ def add_photo(
     declared_mime: str | None = None,
     label: str | None = None,
     description: str | None = None,
+    recortar: bool = False,
 ) -> repo.Photo:
     role = validate_role(role)
 
@@ -74,7 +75,12 @@ def add_photo(
     # El recorte se computa ahora, no al armar la miniatura (SPEC 6): asi el
     # camino semanal nunca lo espera. Se hace FUERA de la transaccion de arriba
     # porque puede tardar segundos y bloquearia al unico escritor de SQLite.
-    if role in ROLES_CON_RECORTE:
+    #
+    # Y se computa solo si lo pidieron. Recortar de oficio seria cobrarle a toda
+    # subida ~0,4 s y ~730 MB de RSS por algo que muchas fotos no necesitan: las
+    # que ya vienen con transparencia, el marco, el logo. Quien quiere el recorte
+    # marca la casilla.
+    if recortar and role in ROLES_CON_RECORTE:
         processing.ensure_cutout(db, settings, provider, media_id=media.id)
 
     log.info(
@@ -132,3 +138,36 @@ def stats(db: Database, *, user_id: str) -> dict[str, int]:
     with db.connection() as conn:
         conteo = repo.count_by_role(conn, user_id=user_id)
     return {role: conteo.get(role, 0) for role in ROLES}
+
+
+def quitar_fondo(
+    db: Database,
+    settings: Settings,
+    provider: processing.CutoutProvider,
+    *,
+    user_id: str,
+    photo_id: str,
+) -> None:
+    """Le quita el fondo a una foto que ya esta en la libreria.
+
+    No vuelve a subir nada: el recorte es una derivada del mismo medio, y
+    `/photos/{id}/file` empieza a servirla sola porque esa URL siempre fue un
+    PUNTERO al recorte-si-esta-listo, no el archivo.
+
+    Va FUERA de cualquier transaccion: recortar tarda ~0,45 s y bloquearia al
+    unico escritor de SQLite.
+    """
+    photo = get_photo(db, user_id=user_id, photo_id=photo_id)
+    if photo.role not in ROLES_CON_RECORTE:
+        raise errors.RolInvalido(f"A un {photo.role} no se le quita el fondo.")
+    processing.ensure_cutout(db, settings, provider, media_id=photo.media_id)
+
+
+def restaurar_fondo(db: Database, *, user_id: str, photo_id: str) -> None:
+    """Deshace lo anterior: la foto vuelve a servir su original.
+
+    El recorte es una capa que se pone y se saca. Nada se pierde al sacarla: el
+    original nunca se toco, y el recorte tampoco se borra del disco.
+    """
+    photo = get_photo(db, user_id=user_id, photo_id=photo_id)
+    processing.clear_cutout(db, media_id=photo.media_id)

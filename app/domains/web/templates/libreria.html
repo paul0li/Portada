@@ -68,4 +68,6 @@
     {% if role %}Sube tu primera foto de {{ etiquetas[role]|lower }}.{% endif %}
   </p>
 {% endif %}
+
+{% if nueva %}{% include "_modal_foto.html" %}{% endif %}
 {% endblock %}

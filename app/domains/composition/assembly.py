@@ -75,6 +75,12 @@ def _open(path: Path) -> Image.Image:
         return img.convert("RGBA")
 
 
+# Por debajo de esto, un pixel no es parte de la persona: es la basura que deja
+# un modelo de segmentacion. Medido con rembg sobre una foto real: ~15.000
+# pixeles con alfa entre 1 y 8 desperdigados por el lienzo.
+UMBRAL_ALFA = 8
+
+
 def _trim_alpha(img: Image.Image) -> Image.Image:
     """Recorta el margen transparente de un recorte.
 
@@ -82,8 +88,17 @@ def _trim_alpha(img: Image.Image) -> Image.Image:
     con 372px transparentes a la izquierda. Sin esto, la geometria del slot mide
     el LIENZO en vez de la PERSONA, y la figura sale mas pequena de lo pedido y
     descentrada. El slot dice "680px de alto": eso es alto de persona.
+
+    Y el margen se mide con UMBRAL, no con `getbbox()` pelado, que cuenta
+    cualquier alfa distinto de cero. Un recorte a mano deja ceros duros; uno
+    automatico no. Con `isnet` ese ruido llegaba a las esquinas y el bbox de una
+    foto real saltaba de 912 a 1200 px de ancho: el encuadre volvia a medir el
+    lienzo, en silencio y sin romper ningun test. (COMPOSITION-25.)
     """
-    bbox = img.getchannel("A").getbbox() if img.mode == "RGBA" else None
+    if img.mode != "RGBA":
+        return img
+    solido = img.getchannel("A").point(lambda v: 255 if v > UMBRAL_ALFA else 0)
+    bbox = solido.getbbox()
     return img.crop(bbox) if bbox else img
 
 

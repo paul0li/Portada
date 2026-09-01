@@ -704,3 +704,70 @@ section {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* El modal de la foto recién subida. No hay JS: se pinta cuando `?nueva=` está
+   en la URL, así que atrás lo cierra y recargar lo deja donde estaba. */
+.modal-fondo {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 10;
+}
+
+.modal {
+  background: var(--fondo);
+  border-radius: var(--radio);
+  padding: 18px;
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Un teléfono apaisado no da 100vh de alto útil: el modal scrollea por dentro
+     en vez de dejar el botón de cerrar fuera de la pantalla. */
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.modal-imagen {
+  border-radius: var(--radio-chico);
+  overflow: hidden;
+  background: var(--tarjeta);
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-imagen img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Un logo o un marco se ven enteros, no recortados a cuadrado. */
+.modal-imagen.entera img {
+  object-fit: contain;
+}
+
+.modal-estado {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--acento);
+}
+
+.modal form {
+  margin: 0;
+}
+
+.modal-nota {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--tinta-media);
+}

@@ -1,0 +1,40 @@
+{# La foto recién subida, y qué hacerle antes de seguir.
+
+   Es HTML del servidor y cero JS: la foto YA está subida, así que tiene URL, y
+   quién es se lee de `?nueva=<id>` en la barra de direcciones. El mismo
+   principio que el borrador del flujo — atrás y recargar funcionan solos, y no
+   hay estado escondido que se desincronice de lo que se ve.
+
+   Aquí es donde van a caer las próximas acciones sobre una foto. #}
+<div class="modal-fondo">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+    <p class="rotulo" id="modal-titulo">{{ etiquetas[nueva.role] }} · recién subida</p>
+
+    <div class="modal-imagen {{ 'entera' if nueva.role in ('logo', 'marco') }}">
+      {# `?v=` cambia cuando cambia lo que la URL sirve: sin eso el navegador
+         enseñaría la versión anterior, que es justo lo que pasó con la URL del
+         armado. Ver la trampa del `Cache-Control` que miente. #}
+      <img src="{{ nueva.url }}?v={{ nueva.version }}" alt="{{ nueva.etiqueta }}"
+           width="{{ nueva.ancho }}" height="{{ nueva.alto }}">
+    </div>
+
+    {% if nueva.role in roles_con_recorte %}
+      {% if not recorte_activo %}
+        <p class="modal-nota">El recorte automático no está activo en esta instancia.</p>
+      {% elif nueva.sin_fondo %}
+        <p class="modal-estado">✓ Fondo quitado</p>
+        <form method="post" action="/libreria/fotos/{{ nueva.id }}/fondo/deshacer">
+          <input type="hidden" name="volver" value="{{ aqui_con_modal }}">
+          <button class="boton secundario" type="submit">Deshacer</button>
+        </form>
+      {% else %}
+        <form method="post" action="/libreria/fotos/{{ nueva.id }}/fondo">
+          <input type="hidden" name="volver" value="{{ aqui_con_modal }}">
+          <button class="boton" type="submit">Quitarle el fondo</button>
+        </form>
+      {% endif %}
+    {% endif %}
+
+    <a class="boton secundario" href="{{ aqui_sin_modal }}">Listo</a>
+  </div>
+</div>

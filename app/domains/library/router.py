@@ -51,6 +51,7 @@ def upload_photo(
     file: Annotated[UploadFile, File()],
     label: Annotated[str | None, Form()] = None,
     description: Annotated[str | None, Form()] = None,
+    recortar: Annotated[bool, Form()] = False,
 ) -> PhotoOut:
     photo = service.add_photo(
         db,
@@ -63,6 +64,7 @@ def upload_photo(
         declared_mime=file.content_type,
         label=label,
         description=description,
+        recortar=recortar,
     )
     media = service.resolve_media(db, settings, photo)
     return _out(photo, media)

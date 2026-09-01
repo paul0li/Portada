@@ -52,3 +52,7 @@ no toca la base, y la base es lo caro.
 - **COMPOSITION-13** — el checksum del brief cambia si cambia el título, las fotos o la versión del template, y no cambia si no cambia nada.
 - **COMPOSITION-14** — editar el template obliga a subir `TEMPLATE_VERSION`: cambiar el layout es declarar que las miniaturas nuevas no coinciden con las viejas.
 - **COMPOSITION-15** — armar tarda menos de 400 ms.
+
+## El encuadre de un recorte automático
+
+- **COMPOSITION-25** — el encuadre ignora el alfa residual: un recorte con píxeles casi transparentes desperdigados se mide por la persona y no por el lienzo. Sin esto, la figura sale más chica y descentrada, en silencio.

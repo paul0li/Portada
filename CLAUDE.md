@@ -8,7 +8,7 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 **El frontend está terminado: Portada se usa de punta a punta.** Inicio con el
 punto de entrada y los recientes, la librería, el flujo de cinco pasos con el
 preview en vivo, el resultado descargable y el historial. Desde el teléfono, en
-la LAN, sin nube. **182 tests.**
+la LAN, sin nube. **197 tests.**
 
 Corregir una errata cuesta **89 ms y no 287**: el título es *overlay*, así que se
 pega sobre la misma base, que sigue en la caché (SPEC §7③). Eso valía para el
@@ -265,6 +265,13 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-30 | **La marca (logo + marco) no se autocompleta en el backend** | Si el backend rellenara la selección, subir un marco nuevo cambiaría en silencio el checksum de episodios que nadie tocó. El «se pone una vez» lo da la UI preseleccionando el último de cada uno, no el esquema | Nada previsible: es lo que mantiene el checksum honesto |
 | 2026-08-30 | **CI en Ubuntu**, no en macOS | Es el único sitio donde `COMPOSITION-20` dice algo: en un Mac hay Impact, así que una fuente que falte se resuelve al sistema y el fallo no sale hasta producción | Que el proyecto deje de desplegarse en Linux |
 | 2026-08-28 | **Los tests corren con `log_level=DEBUG`** | En `WARNING`, `log.info(...)` ni construye el `LogRecord`, y un `extra` inválido queda dormido hasta producción. Ver la trampa de abajo | Que el ruido de logs estorbe al depurar un test |
+| 2026-08-31 | **El recorte automático es `rembg` local, no una API** | Canva no expone su background remover: bajé su OpenAPI y no hay un solo endpoint de edición de imagen — lo único que dice «background» es `transparent_background` al exportar. Y las de pago (remove.bg, Photoroom) mandarían las fotos de los invitados a un tercero para ahorrar 546 MB | Que el recorte pase a ser masivo, o que el disco importe más que el «sin nube» |
+| 2026-08-31 | **`u2net` y no BiRefNet** | Medido sobre una foto cruda real: u2net 0,44 s, birefnet-lite 13,4 s. BiRefNet tiene el borde más nítido mirando el PNG a 1280 — y esa ventaja **no sobrevive a 320 px**, que es como se ve la miniatura. 30 veces el tiempo por algo invisible donde se mira | Que la miniatura se empiece a mirar a 1280. No pasa en un feed |
+| 2026-08-31 | **El recorte se pide, no se hace de oficio** | Recortar cuesta ~0,45 s y ~730 MB de RSS. Muchas fotos ya vienen con transparencia y no lo necesitan; el marco y el logo no lo admiten. De oficio, toda subida pagaría por la minoría que lo usa | Que las fotos crudas pasen a ser la norma. Entonces el default se da vuelta |
+| 2026-08-31 | **Se pide desde un modal DESPUÉS de subir**, no con una casilla antes | Un modal sobre la foto *que estás por subir* sería estado que solo vive en el navegador, y habría costado la isla de JS que la decisión de «fuera htmx» tenía como condición de reversión. Con la foto ya subida no hace falta nada de eso: tiene URL, el `photo_id` viaja en la URL, y el modal es HTML del servidor con **cero JS**. Además se puede deshacer, que con una casilla no se podía | Que el modal necesite actuar sobre la foto antes de que exista — recortar a mano, elegir encuadre. Ahí sí vuelve la isla de JS |
+| 2026-08-31 | **El proveedor declara `quita_fondo`**, y la pantalla lo pregunta | Con `passthrough` puesto —que es el default— el botón llamaba al recorte, el recorte devolvía la misma imagen, y no pasaba nada: parecía que la app estaba rota. Ahora el modal dice que el recorte no está activo en vez de ofrecer un botón muerto | Nada; preguntar por capacidad y no por nombre es lo que deja meter otro proveedor sin tocar la pantalla |
+| 2026-08-31 | **`import rembg` vive dentro del recorte** | Con la casilla, el import deja de ser una optimización y pasa a ser un requisito: son ~190 MB de RSS al importar y ~470 MB con la sesión cargada. Quien nunca marca la casilla no paga nada. El precio es que el primer recorte del proceso tarda 3,4 s en vez de 0,45 s | Precargar en el arranque, si el primer recorte llegara a molestar. Cuesta 470 MB siempre |
+| 2026-08-31 | **rembg y su modelo se instalan aparte** (`make install-cutout`, `make cutout-model`) | Son 369 MB de librerías (`pymatting`→`numba`→`llvmlite` son dependencias duras, no extras) más 177 MB de modelo que no vive en el repo. `passthrough` sigue siendo el default y el que corre en todos los tests: CI no baja nada | Nada; es el mismo argumento que `NoopFinisher` |
 
 ## Trampas conocidas
 
@@ -376,6 +383,46 @@ vuelvan a morder en la próxima.
 - **Desaturar, oscurecer y aplicar viñeta se multiplican.** Tres efectos suaves
   dan uno brutal: un fondo de estudio (ya oscuro) quedaba negro con 0.55 × 0.75.
   Los valores del tratamiento de fondo salen de mirar el PNG, no de razonarlos.
+- **`getbbox()` cuenta cualquier alfa distinto de cero, y un recorte automático
+  no deja ceros duros.** rembg deja ~15.000 píxeles con alfa entre 1 y 8
+  desperdigados: medido sobre una foto real, con `isnet` llegaban a las esquinas
+  y el bbox saltaba de 912 a **1200 px** de ancho — el lienzo entero. `_trim_alpha`
+  pasaba a encuadrar por el lienzo en vez de por la persona, así que la figura
+  salía más chica y descentrada, sin romper nada y sin avisar. Es la trampa del
+  padding transparente (`COMPOSITION-18`) con la causa al revés, y la vigila
+  `COMPOSITION-25`. Corolario: el umbral no es cosmético; sin él, cambiar de
+  modelo de segmentación cambia el encuadre.
+- **`PYTHONDONTWRITEBYTECODE=1` es carísimo con 369 MB de dependencias.** El
+  primer recorte por HTTP medía **47 s**, y no era rembg: sin `.pyc`, cada
+  arranque reparsea scipy, scikit-image, numba y llvmlite desde el fuente. Con
+  la caché de bytecode puesta —que es como corre `make dev`— son **3,4 s**. La
+  variable está en `make test` por la trampa del mtime, y ahí no molesta porque
+  los tests corren con `passthrough`. Pero cualquier medición de tiempo hecha
+  con ella puesta miente por un orden de magnitud.
+- **Una casilla HTML sin marcar no viaja.** No manda `off`: no manda nada. Por
+  eso `web` lee la *presencia* del campo (`bool(recortar)`) y no su valor. Un
+  `== "on"` funcionaría por casualidad hoy y se rompería el día que alguien le
+  cambie el `value`.
+- **Una casilla que no hace nada es un botón que miente.** «Sacarle el fondo»
+  aparecía también en `logo` y `marco`, donde el recorte no existe: se marcaba y
+  no pasaba nada. La lista de roles que admiten recorte la exporta `library` y la
+  plantilla la lee; copiarla en el HTML habría dejado dos verdades. `WEB-33`
+  vigila las dos direcciones — que esté donde debe y que no esté donde no.
+- **Un botón que no puede fallar es un botón que miente, y vuelve por otra
+  puerta.** Pasó dos veces con lo mismo en una tarde: primero la casilla
+  «sacarle el fondo» aparecía en `logo` y `marco`, donde el recorte no existe;
+  y después, ya arreglado eso, el botón del modal seguía apareciendo con
+  `passthrough` configurado —el default— llamando a un recorte que devuelve la
+  misma imagen. Ninguna de las dos rompía nada: las dos hacían creer que la app
+  estaba rota. La diferencia entre «no ofrezco esto» y «esto no hace nada» tiene
+  que estar en la pantalla, y quien la decide es la capacidad (`quita_fondo`),
+  no el nombre del proveedor. Lo vigilan `WEB-35` y `WEB-36`.
+- **Un test que compara la URL de vuelta entera se rompe con cada cosa que se le
+  agregue.** `WEB-20` afirmaba `location == paso`, y abrir el modal le sumó
+  `&nueva=<id>`: el test falló diciendo «me sacó del flujo» cuando el flujo
+  estaba intacto. Ahora compara el paso sin los parámetros del modal, que es lo
+  que el criterio dice de verdad. Regla: un test afirma lo que le importa, no
+  todo lo que pasa por delante.
 - **`StarletteDeprecationWarning: install httpx2`** al importar `TestClient`. Es
   ruido conocido de starlette 1.6 con httpx 0.28; no afecta nada. Se resuelve solo
   cuando starlette estabilice el soporte de httpx2.
