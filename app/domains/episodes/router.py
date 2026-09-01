@@ -38,6 +38,7 @@ def _out(db, episode: repo.Episode) -> EpisodeOut:
         id=episode.id,
         title=episode.title,
         strength=episode.strength,
+        degradado=episode.degradado,
         selection=episode.slots,
         created_at=episode.created_at,
         assembly=_assembly_out(assembly),
@@ -52,6 +53,7 @@ def create_episode(body: CreateEpisode, db: Db, user_id: CurrentUser) -> Episode
         title=body.title,
         selection=body.normalized_selection(),
         strength=body.strength,
+        degradado=body.degradado,
     )
     return _out(db, episode)
 

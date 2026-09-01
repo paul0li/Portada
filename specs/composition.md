@@ -9,6 +9,7 @@ y un título, sale un PNG.
 - **COMPOSITION-01** — el mismo brief produce exactamente los mismos bytes. Es la garantía de consistencia de SPEC §4, y sin ella nada del resto importa.
 - **COMPOSITION-02** — la salida es un PNG de 1280×720 (SPEC §10).
 - **COMPOSITION-03** — sin `fondo` se usa el degradado de la paleta: la ausencia es una entrada válida, no un error (SPEC §11.8).
+- **COMPOSITION-26** — el brief elige cuál de los degradados de la paleta responde a «no hay fondo», claro u oscuro, y elegirlo cambia los píxeles y el checksum de la base. Un nombre que no existe cae en el por defecto en vez de romper el armado (SPEC §11.4).
 - **COMPOSITION-04** — un brief vacío produce igual un PNG válido: el armado siempre es salida válida (SPEC §11.4).
 - **COMPOSITION-05** — el `conductor` va delante del `invitado`: el z-order de SPEC §6 se respeta.
 

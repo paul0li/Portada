@@ -9,10 +9,17 @@ Cambiar cualquier valor de aqui es cambiar como se ve el canal. Por eso lleva
 coincidir con las viejas, y hay un test que falla si se edita sin subirlo.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal
 
-TEMPLATE_VERSION = 4
+TEMPLATE_VERSION = 5
+# v5 (2026-09-01): el degradado que responde a "no hay fondo" deja de ser uno.
+#   El template autora DOS -- claro y oscuro -- y el episodio elige cual. Sigue
+#   sin haber nada generado: son dos constantes de esta paleta, no una perilla
+#   libre (SPEC 11.1 y 11.3). Sube la version porque `Palette` cambia de forma,
+#   y con ella el checksum de todo armado.
 # v4 (2026-08-31): el degradado que responde a "no hay fondo" pasa de oscuro a
 #   claro. Solo se ve cuando el episodio no trae foto de fondo, pero eso es
 #   justo el caso por defecto: es el fondo que tiene una miniatura cuando nadie
@@ -147,31 +154,63 @@ TYPOGRAPHY = Typography()
 # --- paleta --------------------------------------------------------------
 
 
+Color = tuple[int, int, int]
+Degradado = tuple[Color, Color]
+
+# Los dos degradados que responden a "no hay fondo" (SPEC 6). Los DOS estan
+# autorados aqui: elegir entre ellos es elegir contenido dentro del template,
+# no aflojar el layout (SPEC 11.1). Y son una lista cerrada de nombres, no una
+# perilla libre, que es lo que SPEC 11.3 pide de cualquier eleccion.
+#
+# Los dos son neutros frios por lo mismo que en v2: sobre cualquier cosa rojiza
+# la regla de acento no se ve y el marco rojo del show pierde fuerza, asi que el
+# rojo tiene que ser lo unico rojo.
+#
+# `claro` no es gratis, y por eso conviene poder no usarlo: el titulo es blanco
+# con contorno oscuro, asi que sobre el se lee por el CONTORNO y no por el
+# relleno (comprobado a 320px, el tamano al que se ve en un feed). `oscuro` es
+# el degradado que el template tuvo hasta v3, y ahi el titulo se lee por el
+# relleno. Cual conviene lo decide la miniatura de la semana, no este archivo:
+# de eso trata poder elegirlo.
+DEGRADADOS: Mapping[str, Degradado] = MappingProxyType(
+    {
+        "claro": ((238, 240, 245), (188, 194, 208)),
+        "oscuro": ((38, 42, 58), (16, 17, 22)),
+    }
+)
+
+# El que vale cuando nadie elige. Sigue siendo el claro (v4): es el fondo que
+# tiene una miniatura cuando nadie toco nada.
+DEGRADADO_POR_DEFECTO = "claro"
+
+
 @dataclass(frozen=True, slots=True)
 class Palette:
     """Los colores del show.
 
-    `gradient` es la respuesta a "no hay fondo" (SPEC 6): un degradado
-    deterministico, no una imagen generada. Consistencia sobre novedad -- un
+    `degradados` es la respuesta a "no hay fondo" (SPEC 6): degradados
+    deterministicos, no imagenes generadas. Consistencia sobre novedad -- un
     fondo generado seria el unico elemento que cambia cada semana sin motivo.
+    Elegir entre dos constantes de la paleta no es eso: la semana que viene el
+    mismo brief da los mismos pixeles.
     """
 
-    title: tuple[int, int, int] = (255, 255, 255)
-    title_stroke: tuple[int, int, int] = (12, 12, 16)
+    title: Color = (255, 255, 255)
+    title_stroke: Color = (12, 12, 16)
     # El rojo exacto del marco del show, muestreado de marco.png. La regla de
     # acento repite la marca en vez de competir con ella.
-    accent: tuple[int, int, int] = (233, 40, 39)
-    # Claro, y neutro frio. Lo de "neutro frio" viene de v2 y sigue mandando:
-    # sobre cualquier cosa rojiza la regla de acento no se ve y el marco rojo
-    # del show pierde fuerza, asi que el rojo tiene que ser lo unico rojo.
-    # Lo de "claro" es de v4, y no es gratis: el titulo es blanco con contorno
-    # oscuro, asi que sobre este degradado se lee por el CONTORNO y no por el
-    # relleno. Se comprobo a 320px, que es el tamano al que se ve en un feed.
-    gradient: tuple[tuple[int, int, int], tuple[int, int, int]] = (
-        (238, 240, 245),
-        (188, 194, 208),
-    )
-    shadow: tuple[int, int, int] = (0, 0, 0)
+    accent: Color = (233, 40, 39)
+    degradados: Mapping[str, Degradado] = DEGRADADOS
+    shadow: Color = (0, 0, 0)
+
+    def degradado(self, nombre: str = DEGRADADO_POR_DEFECTO) -> Degradado:
+        """El degradado de ese nombre. Uno desconocido cae en el por defecto.
+
+        No lanza a proposito: un nombre invalido lo rechaza quien recibe la
+        peticion, y aqui abajo la regla es la de SPEC 11.4 -- el armado siempre
+        es salida valida, nunca una excepcion a mitad de dibujar.
+        """
+        return self.degradados.get(nombre, self.degradados[DEGRADADO_POR_DEFECTO])
 
 
 PALETTE = Palette()

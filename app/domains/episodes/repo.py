@@ -13,6 +13,10 @@ class Episode:
     user_id: str
     title: str
     strength: str
+    # `claro` u `oscuro`: cual de los degradados de la paleta responde a "no hay
+    # foto de fondo". Se guarda por nombre, no por color: los colores viven en
+    # el template y nadie mas los escribe.
+    degradado: str
     created_at: str
     deleted_at: str | None
     slots: dict[str, list[str]] = field(default_factory=dict)  # rol -> photo_ids
@@ -55,14 +59,15 @@ def insert(
     user_id: str,
     title: str,
     strength: str,
+    degradado: str,
     selection: dict[str, list[str]],
 ) -> Episode:
     episode_id = new_id()
     creado = utcnow()
     conn.execute(
-        "INSERT INTO episodes_jobs (id, user_id, title, strength, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (episode_id, user_id, title, strength, creado),
+        "INSERT INTO episodes_jobs (id, user_id, title, strength, degradado, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (episode_id, user_id, title, strength, degradado, creado),
     )
     conn.executemany(
         "INSERT INTO episodes_slots (episode_id, role, photo_id, position) VALUES (?, ?, ?, ?)",
@@ -77,6 +82,7 @@ def insert(
         user_id=user_id,
         title=title,
         strength=strength,
+        degradado=degradado,
         created_at=creado,
         deleted_at=None,
         slots=selection,

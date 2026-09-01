@@ -8,6 +8,24 @@
   <p>{{ ayudas[role] }}</p>
 </div>
 
+{% if opciones_fondo %}
+  {# Los dos fondos por defecto. Son ENLACES al mismo paso, no radios: el
+     borrador vive en la URL, así que elegir fondo repinta el preview y se
+     deshace con «atrás», igual que elegir una foto. #}
+  <fieldset class="intensidad">
+    <legend class="rotulo">Si no eliges foto</legend>
+    <div class="fila">
+      {% for opcion in opciones_fondo %}
+        <a class="opcion" href="{{ opcion.url }}"
+           aria-current="{{ 'true' if opcion.puesto else 'false' }}">
+          <span class="muestra" style="background: {{ opcion.muestra }}" aria-hidden="true"></span>
+          <span>{{ opcion.nombre|capitalize }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </fieldset>
+{% endif %}
+
 <div class="grilla">
   {# Subir sin salirse del paso: el invitado se sube cada semana (SPEC §8, paso
      3), y mandar a la librería a por él costaría perder lo ya elegido. #}

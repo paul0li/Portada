@@ -449,6 +449,56 @@ def test_web_21_la_vuelta_despues_de_subir_no_sale_de_portada(client, imagen):
         )
 
 
+def test_web_37_el_fondo_por_defecto_se_elige_en_su_paso(client, imagen):
+    """Claro u oscuro, sin salir del paso y sin perder lo elegido.
+
+    Es la misma mecanica que elegir una foto: un enlace al MISMO paso con el
+    borrador entero puesto. Por eso se comprueba que la eleccion sigue viva tres
+    pantallas mas adelante, que es donde se arma.
+    """
+    from PIL import Image
+
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    paso_fondo = client.get(
+        "/nueva", params={"paso": 3, "conductor": ids["conductor"], "degradado": "claro"}
+    )
+    assert paso_fondo.status_code == 200
+    enlace = re.search(r'href="(/nueva\?[^"]*degradado=oscuro[^"]*)"', paso_fondo.text)
+    assert enlace, "el paso del fondo no ofrece el degradado oscuro"
+
+    # `&amp;` es lo correcto en un atributo HTML, y no es lo que se pide por HTTP.
+    oscuro = client.get(enlace.group(1).replace("&amp;", "&"))
+    assert oscuro.status_code == 200
+    assert ids["conductor"] in oscuro.text, "elegir el fondo se llevo por delante lo elegido"
+    assert "paso=4" in oscuro.text, "elegir el fondo saco del paso en vez de repintarlo"
+    # El preview de esa pantalla pide el fondo elegido: es lo que hace que la
+    # eleccion se VEA antes de armar.
+    assert re.search(r'id="preview" src="[^"]*degradado=oscuro', oscuro.text)
+
+    # Y sobrevive hasta el ultimo paso, que es quien manda el formulario.
+    ultimo = client.get(
+        "/nueva", params={"paso": 5, "conductor": ids["conductor"], "degradado": "oscuro"}
+    )
+    assert 'name="degradado" value="oscuro"' in ultimo.text
+
+    def _esquina(degradado):
+        creado = _armar(client, {"conductor": ids["conductor"]}, degradado=degradado)
+        assert creado.status_code in (302, 303), creado.text[:400]
+        episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+        png = client.get(f"/episodes/{episode_id}/assembly/file").content
+        # (400, 30) y no una esquina: el flujo pone el marco a sangre completa,
+        # y sus 16px de borde son lo que se mide en la esquina, pase lo que pase
+        # debajo. Ahi arriba no llegan ni el logo, ni el titulo, ni las figuras:
+        # es degradado puro.
+        return Image.open(io.BytesIO(png)).convert("RGB").getpixel((400, 30))
+
+    assert sum(_esquina("claro")) > sum(_esquina("oscuro")) + 200, (
+        "el fondo elegido no llego a la miniatura"
+    )
+
+
 # --- el preview en vivo --------------------------------------------------
 
 

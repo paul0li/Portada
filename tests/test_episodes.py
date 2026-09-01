@@ -291,3 +291,42 @@ def test_episodes_16_corregir_el_titulo_cambia_lo_que_sirve_esa_url(logged_in, i
         f"/episodes/{episode_id}/assembly/file", headers={"If-None-Match": etag_viejo}
     )
     assert con_etag_viejo.status_code == 200, "el ETag viejo sigue validando"
+
+
+def test_episodes_17_el_episodio_recuerda_su_fondo_por_defecto(logged_in, imagen):
+    """El fondo claro u oscuro viaja con el episodio hasta los pixeles.
+
+    Y un nombre que no existe es un 422 aqui, no un armado silencioso con el
+    fondo equivocado: `composition` cae en el por defecto para no fallar a mitad
+    de dibujar (SPEC 11.4), asi que el sitio donde eso ES un error es la puerta.
+    """
+    conductor = _foto(logged_in, imagen, "conductor")
+
+    def _armar(degradado):
+        creado = _crear(logged_in, {"conductor": conductor}, degradado=degradado)
+        assert creado.status_code == 201, creado.text
+        episode_id = creado.json()["id"]
+        logged_in.post(f"/episodes/{episode_id}/assembly")
+        return (
+            logged_in.get(f"/episodes/{episode_id}").json()["degradado"],
+            logged_in.get(f"/episodes/{episode_id}/assembly/file").content,
+        )
+
+    guardado_claro, png_claro = _armar("claro")
+    guardado_oscuro, png_oscuro = _armar("oscuro")
+
+    assert (guardado_claro, guardado_oscuro) == ("claro", "oscuro"), "no lo recordo"
+
+    # Hasta los pixeles: la esquina de arriba a la izquierda es degradado puro,
+    # sin conductor ni titulo encima.
+    esquina_clara = Image.open(io.BytesIO(png_claro)).convert("RGB").getpixel((20, 8))
+    esquina_oscura = Image.open(io.BytesIO(png_oscuro)).convert("RGB").getpixel((20, 8))
+    assert sum(esquina_clara) > sum(esquina_oscura) + 200, "el armado ignoro el fondo elegido"
+
+    # Sin pedir nada se sigue armando con el claro: el por defecto no cambio.
+    por_defecto = _crear(logged_in, {"conductor": conductor})
+    assert por_defecto.json()["degradado"] == "claro"
+
+    invalido = _crear(logged_in, {"conductor": conductor}, degradado="fucsia")
+    assert invalido.status_code == 422, "acepto un fondo que no existe"
+    assert invalido.json()["error"]["code"] == "EPISODES_SELECTION_INVALID"
