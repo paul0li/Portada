@@ -18,13 +18,19 @@ class Episode:
     # foto de fondo". Se guarda por nombre, no por color: los colores viven en
     # el template y nadie mas los escribe.
     degradado: str
+    # Cuanto se ensancha el bloque del titulo respecto del template, y si el
+    # titulo va a una palabra por linea. Los dos son OVERLAY: cambiarlos cuesta
+    # lo mismo que corregir una errata, no una composicion entera.
+    titulo_ancho: int
+    titulo_apilado: bool
     created_at: str
     deleted_at: str | None
     slots: dict[str, list[str]] = field(default_factory=dict)  # rol -> photo_ids
-    # Rol -> empujon. Vacio es lo normal: "donde diga el template". El tipo es
-    # el de `composition` y no uno propio de aqui -- un ajuste es un concepto de
-    # composicion, y tener dos copias del mismo dato es tener dos verdades.
-    ajustes: dict[str, composition.Ajuste] = field(default_factory=dict)
+    # Rol -> un ajuste por FIGURA, en el orden de sus fotos. Vacio es lo normal:
+    # "donde diga el template". El tipo es el de `composition` y no uno propio
+    # de aqui -- un ajuste es un concepto de composicion, y tener dos copias del
+    # mismo dato es tener dos verdades.
+    ajustes: dict[str, list[composition.Ajuste]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,12 +64,26 @@ def _slots(conn: sqlite3.Connection, episode_id: str) -> dict[str, list[str]]:
     return seleccion
 
 
-def _ajustes(conn: sqlite3.Connection, episode_id: str) -> dict[str, composition.Ajuste]:
+def _ajustes(conn: sqlite3.Connection, episode_id: str) -> dict[str, list[composition.Ajuste]]:
+    """Rol -> un ajuste por figura, en orden y sin huecos.
+
+    Solo se guardan las figuras ajustadas, asi que una lista puede empezar por
+    una figura que nadie toco: los huecos se rellenan con `SIN_AJUSTE`, que es
+    lo que significa no tener fila.
+    """
     rows = conn.execute(
-        "SELECT role, dx, dy, capa FROM episodes_ajustes WHERE episode_id = ?",
+        "SELECT role, posicion, dx, dy, capa, voltear_x, voltear_y FROM episodes_ajustes "
+        "WHERE episode_id = ? ORDER BY role, posicion",
         (episode_id,),
     )
-    return {role: composition.Ajuste(dx=dx, dy=dy, capa=capa) for role, dx, dy, capa in rows}
+    puestos: dict[str, list[composition.Ajuste]] = {}
+    for role, posicion, dx, dy, capa, vx, vy in rows:
+        figuras = puestos.setdefault(role, [])
+        figuras.extend([composition.SIN_AJUSTE] * (posicion + 1 - len(figuras)))
+        figuras[posicion] = composition.Ajuste(
+            dx=dx, dy=dy, capa=capa, voltear_x=bool(vx), voltear_y=bool(vy)
+        )
+    return puestos
 
 
 def insert(
@@ -73,21 +93,48 @@ def insert(
     title: str,
     strength: str,
     degradado: str,
+    titulo_ancho: int,
+    titulo_apilado: bool,
     selection: dict[str, list[str]],
-    ajustes: dict[str, composition.Ajuste] | None = None,
+    ajustes: dict[str, list[composition.Ajuste]] | None = None,
 ) -> Episode:
     episode_id = new_id()
     creado = utcnow()
     conn.execute(
-        "INSERT INTO episodes_jobs (id, user_id, title, strength, degradado, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (episode_id, user_id, title, strength, degradado, creado),
+        "INSERT INTO episodes_jobs "
+        "(id, user_id, title, strength, degradado, titulo_ancho, titulo_apilado, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            episode_id,
+            user_id,
+            title,
+            strength,
+            degradado,
+            titulo_ancho,
+            int(titulo_apilado),
+            creado,
+        ),
     )
+    # Una fila por figura AJUSTADA: las que estan donde dice el template no se
+    # escriben, y por eso `_ajustes` rellena los huecos al leer.
     conn.executemany(
-        "INSERT INTO episodes_ajustes (episode_id, role, dx, dy, capa) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO episodes_ajustes "
+        "(episode_id, role, posicion, dx, dy, capa, voltear_x, voltear_y) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            (episode_id, role, ajuste.dx, ajuste.dy, ajuste.capa)
-            for role, ajuste in (ajustes or {}).items()
+            (
+                episode_id,
+                role,
+                posicion,
+                ajuste.dx,
+                ajuste.dy,
+                ajuste.capa,
+                int(ajuste.voltear_x),
+                int(ajuste.voltear_y),
+            )
+            for role, figuras in (ajustes or {}).items()
+            for posicion, ajuste in enumerate(figuras)
+            if ajuste != composition.SIN_AJUSTE
         ],
     )
     conn.executemany(
@@ -104,11 +151,20 @@ def insert(
         title=title,
         strength=strength,
         degradado=degradado,
+        titulo_ancho=titulo_ancho,
+        titulo_apilado=titulo_apilado,
         created_at=creado,
         deleted_at=None,
         slots=selection,
-        ajustes=dict(ajustes or {}),
+        ajustes={role: list(figuras) for role, figuras in (ajustes or {}).items()},
     )
+
+
+def _fila(row: sqlite3.Row) -> dict:
+    """La fila como kwargs del dataclass. SQLite devuelve 0/1 donde hay un bool."""
+    datos = dict(row)
+    datos["titulo_apilado"] = bool(datos["titulo_apilado"])
+    return datos
 
 
 def get(conn: sqlite3.Connection, *, user_id: str, episode_id: str) -> Episode | None:
@@ -118,7 +174,7 @@ def get(conn: sqlite3.Connection, *, user_id: str, episode_id: str) -> Episode |
     ).fetchone()
     if row is None:
         return None
-    return Episode(**dict(row), slots=_slots(conn, episode_id), ajustes=_ajustes(conn, episode_id))
+    return Episode(**_fila(row), slots=_slots(conn, episode_id), ajustes=_ajustes(conn, episode_id))
 
 
 def list_episodes(conn: sqlite3.Connection, *, user_id: str, limit: int = 50) -> list[Episode]:
@@ -128,7 +184,7 @@ def list_episodes(conn: sqlite3.Connection, *, user_id: str, limit: int = 50) ->
         (user_id, limit),
     ).fetchall()
     return [
-        Episode(**dict(r), slots=_slots(conn, r["id"]), ajustes=_ajustes(conn, r["id"]))
+        Episode(**_fila(r), slots=_slots(conn, r["id"]), ajustes=_ajustes(conn, r["id"]))
         for r in rows
     ]
 

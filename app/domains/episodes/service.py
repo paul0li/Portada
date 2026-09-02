@@ -30,7 +30,12 @@ MAX_TITLE = 140
 # SPEC 6: minimos por rol. El conductor es el unico obligatorio -- sin el no hay
 # miniatura del show, solo una imagen. Todo lo demas es opcional (SPEC 11.8).
 MINIMOS = {"conductor": 1}
-MAXIMOS = {"conductor": 1, "invitado": 1, "fondo": 1, "logo": 1, "marco": 1, "objeto": 2}
+
+# Cuantas admite cada rol NO se decide aqui: lo dice el template, que es quien
+# sabe donde caben. Escribirlo otra vez seria una segunda verdad, y la que se
+# quedaria vieja es esta -- rechazando con un 422 una seleccion que el armado
+# dibuja perfectamente.
+MAXIMOS = composition.MAX_POR_ROL
 
 
 def _normalize_title(title: str) -> str:
@@ -96,27 +101,69 @@ def _validate_degradado(degradado: str) -> str:
 
 
 def _validate_ajustes(
-    ajustes: dict[str, composition.Ajuste] | None,
-) -> dict[str, composition.Ajuste]:
-    """Los empujones, acotados a los topes del template.
+    ajustes: dict[str, list[composition.Ajuste]] | None,
+) -> dict[str, list[composition.Ajuste]]:
+    """Los ajustes de cada figura, acotados a lo que el template permite.
 
     Un rol que no se puede mover es un 422 y no un ajuste ignorado: pedir mover
     el marco y que no pase nada es la clase de botón que miente. Los NÚMEROS, en
     cambio, se acotan en vez de rechazarse -- lo que el template dice es hasta
     dónde llega un empujón, no cuál es un empujón inválido -- y se guardan ya
     acotados, para que la fila diga lo que se va a dibujar.
+
+    Mover y voltear se preguntan por separado porque son dos permisos distintos:
+    el `fondo` se voltea y no se mueve. Preguntarlos juntos habría hecho una de
+    dos cosas mal -- rechazar un volteo de fondo perfectamente válido, o aceptar
+    en silencio un empujón que nadie iba a dibujar.
+
+    Ajustar más figuras de las que un rol admite es 422 por lo mismo: un ajuste
+    para un tercer invitado no lo va a dibujar nadie nunca.
     """
-    limpios: dict[str, composition.Ajuste] = {}
-    for role, ajuste in (ajustes or {}).items():
-        if role not in composition.ROLES_MOVIBLES:
+    limpios: dict[str, list[composition.Ajuste]] = {}
+    for role, pedidos in (ajustes or {}).items():
+        tope = MAXIMOS.get(role, 1)
+        if len(pedidos) > tope:
             raise errors.SeleccionInvalida(
-                f"Ese rol no se puede mover: {role!r}.",
-                details={"role": role, "valid": list(composition.ROLES_MOVIBLES)},
+                f"El rol {role!r} tiene como máximo {tope} figura(s) que ajustar.",
+                details={"role": role, "max": tope, "given": len(pedidos)},
             )
-        acotado = composition.acotar(role, ajuste)
-        if acotado != composition.SIN_AJUSTE:
-            limpios[role] = acotado
+        for ajuste in pedidos:
+            if (ajuste.dx or ajuste.dy or ajuste.capa) and role not in composition.ROLES_MOVIBLES:
+                raise errors.SeleccionInvalida(
+                    f"Ese rol no se puede mover: {role!r}.",
+                    details={"role": role, "valid": list(composition.ROLES_MOVIBLES)},
+                )
+            if (ajuste.voltear_x or ajuste.voltear_y) and role not in (
+                composition.ROLES_VOLTEABLES
+            ):
+                raise errors.SeleccionInvalida(
+                    f"Ese rol no se puede voltear: {role!r}.",
+                    details={"role": role, "valid": list(composition.ROLES_VOLTEABLES)},
+                )
+        acotados = [composition.acotar(role, ajuste) for ajuste in pedidos]
+        if any(a != composition.SIN_AJUSTE for a in acotados):
+            limpios[role] = acotados
     return limpios
+
+
+def _solo_las_figuras_elegidas(
+    ajustes: dict[str, list[composition.Ajuste]], seleccion: dict[str, list[str]]
+) -> dict[str, list[composition.Ajuste]]:
+    """Tira los ajustes de figuras que no existen en ESTA selección.
+
+    Un ajuste para el segundo invitado cuando solo vino uno no dibuja nada, así
+    que guardarlo dejaría una fila diciendo algo que no se ve. Se cae aquí y no
+    en un 422 porque llega solo: en el flujo se ajusta y después se cambia de
+    idea sobre una foto, y eso no es un error de nadie.
+    """
+    recortados = {}
+    for role, pedidos in ajustes.items():
+        quedan = pedidos[: len(seleccion.get(role, []))]
+        while quedan and quedan[-1] == composition.SIN_AJUSTE:
+            quedan.pop()
+        if quedan:
+            recortados[role] = quedan
+    return recortados
 
 
 def create_episode(
@@ -127,7 +174,9 @@ def create_episode(
     selection: dict[str, list[str]],
     strength: str = finishing.DEFAULT_STRENGTH,
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
-    ajustes: dict[str, composition.Ajuste] | None = None,
+    ajustes: dict[str, list[composition.Ajuste]] | None = None,
+    titulo_ancho: int = 0,
+    titulo_apilado: bool = False,
 ) -> repo.Episode:
     if strength not in finishing.STRENGTHS:
         raise errors.SeleccionInvalida(
@@ -137,6 +186,7 @@ def create_episode(
     _validate_degradado(degradado)
     limpios = _validate_ajustes(ajustes)
     limpia = _validate_selection(db, user_id=user_id, selection=selection)
+    limpios = _solo_las_figuras_elegidas(limpios, limpia)
 
     with db.transaction() as conn:
         episode = repo.insert(
@@ -145,6 +195,10 @@ def create_episode(
             title=_normalize_title(title),
             strength=strength,
             degradado=degradado,
+            # Se guarda ya acotado, como los ajustes: la fila dice lo que se va
+            # a dibujar, no lo que se pidió.
+            titulo_ancho=composition.TEMPLATE.typography.ensanche(titulo_ancho),
+            titulo_apilado=titulo_apilado,
             selection=limpia,
             ajustes=limpios,
         )
@@ -199,7 +253,9 @@ def _brief_de(
     slots: dict[str, list[str]],
     title: str,
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
-    ajustes: dict[str, composition.Ajuste] | None = None,
+    ajustes: dict[str, list[composition.Ajuste]] | None = None,
+    titulo_ancho: int = 0,
+    titulo_apilado: bool = False,
     referencia: str = "",
 ) -> composition.Brief:
     """Resuelve una seleccion a rutas de archivo.
@@ -224,7 +280,12 @@ def _brief_de(
         if rutas:
             photos[role] = rutas
     return composition.Brief(
-        title=title, photos=photos, degradado=degradado, ajustes=dict(ajustes or {})
+        title=title,
+        photos=photos,
+        degradado=degradado,
+        ajustes=dict(ajustes or {}),
+        titulo_ancho=titulo_ancho,
+        titulo_apilado=titulo_apilado,
     )
 
 
@@ -237,6 +298,8 @@ def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> com
         title=episode.title,
         degradado=episode.degradado,
         ajustes=episode.ajustes,
+        titulo_ancho=episode.titulo_ancho,
+        titulo_apilado=episode.titulo_apilado,
         referencia=episode.id,
     )
 
@@ -249,7 +312,9 @@ def preview(
     selection: dict[str, list[str]],
     title: str,
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
-    ajustes: dict[str, composition.Ajuste] | None = None,
+    ajustes: dict[str, list[composition.Ajuste]] | None = None,
+    titulo_ancho: int = 0,
+    titulo_apilado: bool = False,
 ) -> bytes:
     """La miniatura en pequeno de una seleccion que todavia no es un episodio.
 
@@ -269,7 +334,9 @@ def preview(
         slots=limpia,
         title=title,
         degradado=degradado,
-        ajustes=_validate_ajustes(ajustes),
+        ajustes=_solo_las_figuras_elegidas(_validate_ajustes(ajustes), limpia),
+        titulo_ancho=titulo_ancho,
+        titulo_apilado=titulo_apilado,
     )
     return composition.preview(brief)
 

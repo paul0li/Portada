@@ -22,16 +22,24 @@ from app.domains.composition.template import (
     AJUSTES,
     DEGRADADO_POR_DEFECTO,
     DEGRADADOS,
+    MAX_POR_ROL,
     ROLES_MOVIBLES,
+    ROLES_VOLTEABLES,
     TEMPLATE,
     TEMPLATE_VERSION,
     Template,
+)
+from app.domains.composition.template import (
+    TYPOGRAPHY as TIPOGRAFIA,
 )
 
 __all__ = [
     "AJUSTES",
     "BASES",
+    "TIPOGRAFIA",
+    "MAX_POR_ROL",
     "ROLES_MOVIBLES",
+    "ROLES_VOLTEABLES",
     "SIN_AJUSTE",
     "Ajuste",
     "DEGRADADOS",

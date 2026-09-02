@@ -45,8 +45,16 @@ def _out(db, episode: repo.Episode) -> EpisodeOut:
         title=episode.title,
         strength=episode.strength,
         degradado=episode.degradado,
+        titulo_ancho=episode.titulo_ancho,
+        titulo_apilado=episode.titulo_apilado,
         ajustes={
-            role: AjusteIn(dx=a.dx, dy=a.dy, capa=a.capa) for role, a in episode.ajustes.items()
+            role: [
+                AjusteIn(
+                    dx=a.dx, dy=a.dy, capa=a.capa, voltear_x=a.voltear_x, voltear_y=a.voltear_y
+                )
+                for a in ajustes
+            ]
+            for role, ajustes in episode.ajustes.items()
         },
         selection=episode.slots,
         created_at=episode.created_at,
@@ -64,6 +72,8 @@ def create_episode(body: CreateEpisode, db: Db, user_id: CurrentUser) -> Episode
         strength=body.strength,
         degradado=body.degradado,
         ajustes=body.normalized_ajustes(),
+        titulo_ancho=body.titulo_ancho,
+        titulo_apilado=body.titulo_apilado,
     )
     return _out(db, episode)
 

@@ -26,33 +26,6 @@
   </fieldset>
 {% endif %}
 
-{% if empujones.mover or empujones.capa %}
-  {# Empujar la figura sin salir del paso. Enlaces, como todo lo demás del
-     borrador: cada toque es una navegación, el preview de arriba se repinta, y
-     «atrás» deshace. Los topes no se pintan: un botón que no puede mover nada
-     es un botón que miente. #}
-  <div class="empujar">
-    <p class="rotulo">
-      Mover {{ etiquetas[role]|lower }}
-      {% if ajuste.dx or ajuste.dy %}
-        <span class="mono">{{ ajuste.dx }}, {{ ajuste.dy }}</span>
-      {% endif %}
-      {% if ajuste.capa %}
-        <span class="mono">capa {{ "%+d"|format(ajuste.capa) }}</span>
-      {% endif %}
-    </p>
-    {% for fila in (empujones.mover, empujones.capa) %}
-      {% if fila %}
-        <div class="fila">
-          {% for toque in fila %}
-            <a class="opcion" href="{{ toque.url }}" title="{{ toque.titulo }}"
-               aria-label="{{ toque.titulo }}">{{ toque.etiqueta }}</a>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endfor %}
-  </div>
-{% endif %}
 
 <div class="grilla">
   {# Subir sin salirse del paso: el invitado se sube cada semana (SPEC §8, paso
@@ -83,6 +56,43 @@
     {% endfor %}
   {% endif %}
 </div>
+
+{# Un pad por FIGURA elegida: dos invitados comparten slot y no comparten sitio.
+   Ajustar sin salir del paso, con enlaces como todo lo demás del borrador: cada
+   toque es una navegación, el preview de arriba se repinta, y «atrás» deshace.
+   Los topes no se pintan —un botón que no puede mover nada es un botón que
+   miente—, pero los volteos sí se pintan siempre, porque son interruptores: el
+   mismo botón pone y quita. #}
+{% for pad in pads %}
+  {% if pad.filas.mover or pad.filas.capa or pad.filas.voltear %}
+    <div class="empujar">
+      <p class="rotulo">
+        Ajustar {{ pad.titulo }}
+        {% if pad.ajuste.dx or pad.ajuste.dy %}
+          <span class="mono">{{ pad.ajuste.dx }}, {{ pad.ajuste.dy }}</span>
+        {% endif %}
+        {% if pad.ajuste.capa %}
+          <span class="mono">capa {{ "%+d"|format(pad.ajuste.capa) }}</span>
+        {% endif %}
+        {% if pad.ajuste.voltear_x %}<span class="mono">espejo</span>{% endif %}
+        {% if pad.ajuste.voltear_y %}<span class="mono">boca abajo</span>{% endif %}
+      </p>
+      {% for fila in (pad.filas.mover, pad.filas.capa, pad.filas.voltear, pad.filas.reponer) %}
+        {% if fila %}
+          <div class="fila">
+            {% for toque in fila %}
+              <a class="opcion" href="{{ toque.url }}" title="{{ toque.titulo }}"
+                 aria-label="{{ toque.titulo }}"
+                 {% if "puesto" in toque %}
+                   aria-pressed="{{ 'true' if toque.puesto else 'false' }}"
+                 {% endif %}>{{ toque.etiqueta }}</a>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endfor %}
 
 <div class="pie-flujo">
   {% if not obligatorio and elegidas == 0 %}

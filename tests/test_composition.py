@@ -24,12 +24,34 @@ def fotos(tmp_path):
         Image.new(modo, size, color).save(ruta)
         return ruta
 
+    def asimetrica(nombre, size=(600, 900)):
+        """Una figura con una marca en una esquina.
+
+        Un color plano volteado es el mismo color plano: con las de arriba, un
+        test del volteo pasaria con el volteo desconectado. La marca dice ademas
+        en que direccion se volteo.
+        """
+        from PIL import ImageDraw
+
+        ruta = tmp_path / nombre
+        img = Image.new("RGBA", size, (0, 0, 255, 255))
+        ImageDraw.Draw(img).rectangle((0, 0, size[0] // 3, size[1] // 4), fill=(255, 0, 255, 255))
+        img.save(ruta)
+        return ruta
+
     return {
         "fondo": guardar("fondo.png", (1920, 1080), (20, 80, 20, 255)),
         "conductor": guardar("conductor.png", (600, 900), (255, 0, 0, 255)),
         "invitado": guardar("invitado.png", (600, 900), (0, 0, 255, 255)),
+        # El segundo invitado de la semana. Otro color para poder contestar por
+        # pixel la unica pregunta que importa: si los dos se dibujaron.
+        "invitado_b": guardar("invitado-b.png", (600, 900), (0, 255, 0, 255)),
         "objeto": guardar("objeto.png", (300, 300), (255, 255, 0, 255)),
         "logo": guardar("logo.png", (800, 200), (255, 0, 255, 255)),
+        "asimetrica": asimetrica("asimetrica.png"),
+        # En 16:9: el fondo se recorta a `cover`, y una foto vertical pierde
+        # justo la esquina donde esta la marca.
+        "asimetrica_ancha": asimetrica("asimetrica-ancha.png", (1920, 1080)),
     }
 
 
@@ -90,12 +112,12 @@ def test_composition_27_un_ajuste_mueve_la_figura_y_su_capa(fotos):
     movido = composition.Brief(
         title=quieto.title,
         photos=quieto.photos,
-        ajustes={"conductor": composition.Ajuste(dx=-120)},
+        ajustes={"conductor": [composition.Ajuste(dx=-120)]},
     )
     en_cero = composition.Brief(
         title=quieto.title,
         photos=quieto.photos,
-        ajustes={"conductor": composition.Ajuste()},
+        ajustes={"conductor": [composition.Ajuste()]},
     )
 
     assert composition.compose(movido).final != composition.compose(quieto).final
@@ -111,7 +133,7 @@ def test_composition_27_un_ajuste_mueve_la_figura_y_su_capa(fotos):
             composition.Brief(
                 title=quieto.title,
                 photos=quieto.photos,
-                ajustes={"conductor": composition.Ajuste(capa=-1)},
+                ajustes={"conductor": [composition.Ajuste(capa=-1)]},
             )
         ).final
     )
@@ -131,7 +153,7 @@ def test_composition_28_un_ajuste_desmedido_se_acota(fotos):
 
     def _con(ajuste):
         return composition.Brief(
-            photos={"conductor": [fotos["conductor"]]}, ajustes={"conductor": ajuste}
+            photos={"conductor": [fotos["conductor"]]}, ajustes={"conductor": [ajuste]}
         )
 
     desmedido = _con(composition.Ajuste(dx=99999, dy=-99999, capa=99))
@@ -157,7 +179,7 @@ def test_composition_29_los_ajustes_van_en_el_checksum_de_la_base(fotos):
 
     def _con(ajuste):
         return composition.Brief(
-            title=quieto.title, photos=quieto.photos, ajustes={"conductor": ajuste}
+            title=quieto.title, photos=quieto.photos, ajustes={"conductor": [ajuste]}
         )
 
     movido = _con(composition.Ajuste(dx=60))
@@ -176,6 +198,224 @@ def test_composition_29_los_ajustes_van_en_el_checksum_de_la_base(fotos):
     assert composition.base_checksum(_con(composition.Ajuste(dx=tope + 500))) == (
         composition.base_checksum(_con(composition.Ajuste(dx=tope)))
     )
+
+
+# --- voltear una figura --------------------------------------------------
+
+
+def _marca(imagen):
+    """El centro de la marca magenta de la foto asimetrica, o `None`."""
+    caja = _caja(imagen, (255, 0, 255))
+    return None if caja is None else ((caja[0] + caja[2]) / 2, (caja[1] + caja[3]) / 2)
+
+
+def test_composition_33_un_ajuste_puede_voltear_la_figura(fotos):
+    """Y se ve en QUE direccion se volteo, no solo que algo cambio."""
+
+    def _brief_con(**campos):
+        return composition.Brief(
+            photos={"invitado": [fotos["asimetrica"]]},
+            ajustes={"invitado": [composition.Ajuste(**campos)]} if campos else {},
+        )
+
+    quieto = _brief_con()
+    espejo = _brief_con(voltear_x=True)
+    boca_abajo = _brief_con(voltear_y=True)
+
+    derecho = _abrir(composition.compose(quieto).final)
+    volteado = _abrir(composition.compose(espejo).final)
+    invertido = _abrir(composition.compose(boca_abajo).final)
+
+    figura = _caja(derecho, (0, 0, 255))
+    centro_x = (figura[0] + figura[2]) / 2
+    antes, despues = _marca(derecho), _marca(volteado)
+
+    assert antes and despues, "la marca de la figura desaparecio"
+    assert antes[0] < centro_x < despues[0], "voltear en x no cambio la marca de lado"
+    assert abs((centro_x - antes[0]) - (despues[0] - centro_x)) <= 6, "no es un espejo"
+
+    # Y el otro eje es OTRO volteo, no el mismo: la marca baja en vez de cruzar.
+    abajo = _marca(invertido)
+    assert abajo and abajo[1] > antes[1] and abs(abajo[0] - antes[0]) <= 6
+
+    # Con el ajuste en cero, ni un pixel: pedir no voltear es no pedir nada.
+    assert composition.compose(_brief_con(dx=0)).final == composition.compose(quieto).final
+
+    # El volteo va en el checksum de la BASE: la figura esta debajo del titulo,
+    # asi que voltearla invalida lo de abajo, al reves que corregir una errata.
+    assert composition.base_checksum(espejo) != composition.base_checksum(quieto)
+    assert composition.base_checksum(boca_abajo) != composition.base_checksum(espejo)
+
+
+def test_composition_34_la_marca_no_se_voltea_y_el_fondo_si(fotos):
+    """SPEC 11.5: el logo y el marco llevan el nombre del show escrito.
+
+    Un texto en espejo es reinterpretar la marca, que es justo lo unico que la
+    regla prohibe de plano. El fondo es el caso contrario, y por eso hay DOS
+    listas: se voltea aunque no se pueda mover.
+    """
+    for role in ("logo", "marco"):
+        assert role not in template.ROLES_VOLTEABLES
+        assert composition.acotar(role, composition.Ajuste(voltear_x=True)) == (
+            composition.SIN_AJUSTE
+        )
+
+    con_logo = {"logo": [fotos["asimetrica"]]}
+    pedido = composition.Brief(
+        photos=con_logo, ajustes={"logo": [composition.Ajuste(voltear_x=True)]}
+    )
+    assert composition.compose(pedido).final == (
+        composition.compose(composition.Brief(photos=con_logo)).final
+    )
+
+    assert "fondo" in template.ROLES_VOLTEABLES
+    assert "fondo" not in template.ROLES_MOVIBLES
+    fondo = {"fondo": [fotos["asimetrica_ancha"]]}
+    volteado = composition.Brief(
+        photos=fondo, ajustes={"fondo": [composition.Ajuste(voltear_x=True)]}
+    )
+    assert composition.compose(volteado).final != (
+        composition.compose(composition.Brief(photos=fondo)).final
+    )
+    # Y pedirle al fondo un empujon no lo mueve: no hay donde.
+    empujado = composition.Brief(photos=fondo, ajustes={"fondo": [composition.Ajuste(dx=200)]})
+    assert composition.compose(empujado).final == (
+        composition.compose(composition.Brief(photos=fondo)).final
+    )
+
+
+# --- cuando el invitado no es uno ----------------------------------------
+
+
+def _caja(imagen, color, tolerancia=30):
+    """La caja de los pixeles de ese color. `None` si no hay ninguno."""
+    ancho, alto = imagen.size
+    puntos = [
+        (x, y)
+        for x in range(0, ancho, 2)
+        for y in range(0, alto, 4)
+        if sum(abs(a - b) for a, b in zip(imagen.getpixel((x, y)), color, strict=True)) < tolerancia
+    ]
+    if not puntos:
+        return None
+    xs = [x for x, _ in puntos]
+    ys = [y for _, y in puntos]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def test_composition_30_un_slot_se_reparte_por_las_figuras_que_trae(fotos):
+    """Con una sola figura no hay nada que repartir.
+
+    Repartir por `max_items` -- que es lo que se hacia -- dejaba el hueco de la
+    foto que NO vino: un objeto solo se colocaba a media separacion del centro
+    del slot, descentrado por algo que no esta en el cuadro.
+    """
+    slot = template.SLOTS["objeto"]
+    assert slot.max_items > 1 and slot.grupo, "este test necesita un slot de varios"
+
+    uno = _abrir(composition.compose(_brief(fotos, objeto=1)).final)
+    izquierda, _, derecha, _ = _caja(uno, (255, 255, 0))
+
+    assert abs((izquierda + derecha) // 2 - slot.x) <= 4, (
+        "un objeto solo no cae en el centro de su slot"
+    )
+
+    # Y con dos, el grupo sigue centrado ahi, con la separacion del template.
+    dos = _abrir(
+        composition.compose(
+            composition.Brief(photos={"objeto": [fotos["objeto"], fotos["invitado_b"]]})
+        ).final
+    )
+    amarillo = _caja(dos, (255, 255, 0))
+    verde = _caja(dos, (0, 255, 0))
+    assert amarillo and verde, "con dos objetos no se dibujaron los dos"
+    # Por sus CENTROS y no por sus bordes: los dos objetos tienen aspectos
+    # distintos, y lo que el template separa es donde cae cada uno, no cuanto
+    # mide. Es la misma razon por la que la separacion esta en pixeles del
+    # lienzo y no en anchos de imagen.
+    centros = [(caja[0] + caja[2]) / 2 for caja in (amarillo, verde)]
+    assert abs((centros[1] - centros[0]) - slot.grupo.separacion) <= 4
+    assert abs(sum(centros) / 2 - slot.x) <= 4, "el grupo no quedo centrado en el slot"
+
+
+def test_composition_31_el_invitado_puede_ser_mas_de_uno(fotos):
+    """Dos invitados se dibujan los DOS, y dentro del cuadro."""
+    slot = template.SLOTS["invitado"]
+    assert slot.max_items >= 2, "el template ya no admite dos invitados"
+
+    dos = _abrir(
+        composition.compose(
+            composition.Brief(
+                title="EL RING",
+                photos={"invitado": [fotos["invitado"], fotos["invitado_b"]]},
+            )
+        ).final
+    )
+    azul = _caja(dos, (0, 0, 255))
+    verde = _caja(dos, (0, 255, 0))
+
+    assert azul and verde, "el segundo invitado no se dibujo"
+    # El primero queda a la izquierda del segundo, a la distancia que dice el
+    # template. Se comparan los bordes IZQUIERDOS: el del primero es el unico
+    # que no puede taparlo el segundo, que se dibuja encima y a su derecha.
+    assert abs((verde[0] - azul[0]) - slot.grupo.separacion) <= 4
+    assert azul[0] >= 0 and verde[2] < template.CANVAS[0], "un invitado se salio del cuadro"
+
+
+def test_composition_35_cada_figura_lleva_su_ajuste(fotos):
+    """Dos invitados comparten slot y no comparten sitio.
+
+    Mientras el ajuste fue del ROL, moverlos juntos era lo único posible: el
+    empujón que arreglaba a uno se llevaba al otro por delante.
+    """
+    photos = {"invitado": [fotos["invitado"], fotos["invitado_b"]]}
+    quieto = _abrir(composition.compose(composition.Brief(photos=photos)).final)
+    solo_el_segundo = _abrir(
+        composition.compose(
+            composition.Brief(
+                photos=photos,
+                ajustes={"invitado": [composition.SIN_AJUSTE, composition.Ajuste(dx=120)]},
+            )
+        ).final
+    )
+
+    # Los bordes IZQUIERDOS: el del primero es el único que el segundo no puede
+    # tapar, y el del segundo se mueve exactamente lo que se pidió.
+    assert _caja(solo_el_segundo, (0, 0, 255))[0] == _caja(quieto, (0, 0, 255))[0], (
+        "mover al segundo invitado movió al primero"
+    )
+    assert _caja(solo_el_segundo, (0, 255, 0))[0] - _caja(quieto, (0, 255, 0))[0] == 120
+
+    # Y la capa también es de cada figura: el primero puede pasar al frente del
+    # segundo, que es lo que el orden por rol no sabía decir.
+    delante = _abrir(
+        composition.compose(
+            composition.Brief(photos=photos, ajustes={"invitado": [composition.Ajuste(capa=1)]})
+        ).final
+    )
+    solapan = [
+        (x, y)
+        for x in range(580, 660, 10)
+        for y in range(200, 500, 20)
+        if quieto.getpixel((x, y)) == (0, 255, 0) and delante.getpixel((x, y)) == (0, 0, 255)
+    ]
+    assert solapan, "adelantar al primer invitado no cambió quién tapa a quién"
+
+
+def test_composition_32_el_orden_dentro_de_un_rol_cambia_el_checksum(fotos):
+    """El orden es parte del brief, asi que tiene que estar en el checksum.
+
+    Hashear los nombres ORDENADOS daba el mismo checksum a dos miniaturas
+    distintas. Con eso, intercambiar los dos invitados de un episodio devolvia
+    el armado viejo -- misma clave de cache, misma fila -- y la miniatura no
+    cambiaba, sin que fallara nada.
+    """
+    ab = composition.Brief(photos={"invitado": [fotos["invitado"], fotos["invitado_b"]]})
+    ba = composition.Brief(photos={"invitado": [fotos["invitado_b"], fotos["invitado"]]})
+
+    assert composition.compose(ab).final != composition.compose(ba).final
+    assert composition.brief_checksum(ab) != composition.brief_checksum(ba)
+    assert composition.base_checksum(ab) != composition.base_checksum(ba)
 
 
 def test_composition_26_el_brief_elige_el_degradado_por_defecto(fotos):
@@ -241,6 +481,58 @@ def test_composition_05_el_conductor_va_delante_del_invitado(fotos):
         f"el invitado tapa al conductor en {len(superpuestos) - ganados} "
         f"de {len(superpuestos)} puntos de la superposición"
     )
+
+
+# --- como se pone el titulo ----------------------------------------------
+
+
+LARGO = "LA VERDAD SOBRE EL CASO"
+
+
+def test_composition_36_el_titulo_puede_ensancharse(fotos):
+    """Más ancho, menos líneas. Y ensanchar cuesta lo que corregir una errata."""
+    tipografia = template.TYPOGRAPHY
+    estrecho = typography.layout(LARGO, tipografia)
+    ancho = typography.layout(LARGO, tipografia, tipografia.ancho_mas)
+
+    # Que entren más palabras en la primera línea ES lo que «se apilan menos»
+    # quiere decir. Contar líneas no serviría: con el bloque ancho un título de
+    # dos líneas sigue siendo de dos, solo que cortadas mucho más tarde.
+    assert len(ancho.lines[0].split()) > len(estrecho.lines[0].split()), (
+        "ensanchar no cambió el corte"
+    )
+    assert len(ancho.lines) <= len(estrecho.lines)
+
+    def _con(**campos):
+        return composition.Brief(title=LARGO, photos={"conductor": [fotos["conductor"]]}, **campos)
+
+    quieto, ensanchado = _con(), _con(titulo_ancho=tipografia.ancho_mas)
+    assert composition.compose(ensanchado).final != composition.compose(quieto).final
+    # Es OVERLAY: la base no se entera, así que no hay que volver a componerla.
+    assert composition.base_checksum(ensanchado) == composition.base_checksum(quieto)
+    assert composition.brief_checksum(ensanchado) != composition.brief_checksum(quieto)
+
+    # Un ensanche desmedido se acota, no rompe: es la regla de los empujones.
+    assert composition.brief_checksum(_con(titulo_ancho=99999)) == (
+        composition.brief_checksum(ensanchado)
+    )
+
+
+def test_composition_37_el_titulo_puede_ir_una_palabra_por_linea():
+    """Y si no caben, se vuelve al corte normal SIN perder una palabra."""
+    tipografia = template.TYPOGRAPHY
+
+    apilado = typography.layout("NADIE LO VIO", tipografia, apilado=True)
+    assert apilado.apilado is True
+    assert apilado.lines == ("NADIE", "LO", "VIO")
+
+    # Ocho palabras no caben apiladas: ni al tamaño mínimo entran ocho líneas
+    # entre el logo y la regla de acento.
+    demasiadas = "UNO DOS TRES CUATRO CINCO SEIS SIETE OCHO"
+    caido = typography.layout(demasiadas, tipografia, apilado=True)
+
+    assert caido.apilado is False, "dijo que apiló y no apiló"
+    assert " ".join(caido.lines) == demasiadas, "se perdió una palabra por un look"
 
 
 # --- base / final --------------------------------------------------------
@@ -505,7 +797,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "70b1c1bcf68a195c"
+HUELLA_DEL_TEMPLATE = "e31eecb160d5114f"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():
@@ -523,6 +815,10 @@ def test_composition_14_editar_el_template_obliga_a_subir_la_version():
                 # cualquier episodio que use un ajuste.
                 template.AJUSTES,
                 template.ROLES_MOVIBLES,
+                # Que roles se pueden voltear es una decision del template como
+                # las demas: quitarle el volteo a un rol cambia los pixeles de
+                # cualquier episodio que lo usara, en silencio.
+                template.ROLES_VOLTEABLES,
                 # La tipografia no vive en template.py pero decide cada pixel del
                 # titulo: cambiarla sin subir la version deja el canal con dos
                 # fuentes, porque `brief_checksum` incluye la version y el armado

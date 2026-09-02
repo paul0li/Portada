@@ -11,6 +11,9 @@ y es la que decide si la miniatura se lee en un feed. Tres reglas:
 3. **El corte respeta las palabras.** Nunca parte una palabra: prefiere bajar el
    tamano. Una palabra sola mas ancha que el bloque es el unico caso en que se
    acepta que sobresalga, porque la alternativa es no dibujarla.
+4. **Nunca se pierde una palabra.** El episodio puede pedir una palabra por
+   linea; si no caben, se vuelve al corte normal y se DICE. Apilar es un look,
+   y ninguna forma de verse justifica tragarse media frase.
 """
 
 from dataclasses import dataclass
@@ -29,6 +32,10 @@ class LaidOutTitle:
     size: int
     line_height: int
     fits: bool  # False: se uso el tamano minimo y aun asi no cabia
+    # Si se apilo DE VERDAD. Se pide apilar y no siempre se puede: con seis
+    # palabras no caben seis lineas, y la salida es volver al corte normal, no
+    # perder palabras. Quien pregunta puede decirlo en pantalla.
+    apilado: bool = False
 
 
 def normalize(title: str, typography: Typography) -> str:
@@ -60,45 +67,92 @@ def _wrap(
     return lines
 
 
-def layout(title: str, typography: Typography) -> LaidOutTitle:
-    """Elige el tamano mas grande con el que el titulo cabe en su bloque."""
+def _probar(
+    words: list[str], typography: Typography, ancho: int, apilado: bool
+) -> tuple[LaidOutTitle, bool]:
+    """El titulo al tamano mas grande con el que cabe, y si cabio.
+
+    El alto tambien manda, no solo el numero de lineas: una palabra por linea
+    puede dar cinco, y cinco lineas grandes se salen del bloque por arriba, que
+    es donde esta el logo.
+    """
+    regla = ImageDraw.Draw(Image.new("RGB", (1, 1)))  # 1x1: es para medir
+    alto_disponible = typography.bottom - typography.top
+    maximo = typography.max_lineas(apilado)
+
+    ultimo: LaidOutTitle | None = None
+    for size in range(typography.size_max, typography.size_min - 1, -typography.size_step):
+        font = fonts.load(size)
+        lines = list(words) if apilado else _wrap(regla, words, font, ancho)
+        line_height = int(size * typography.line_spacing)
+        cabe = (
+            len(lines) <= maximo
+            and line_height * len(lines) <= alto_disponible
+            and all(_text_width(regla, line, font) <= ancho for line in lines)
+        )
+        ultimo = LaidOutTitle(
+            lines=tuple(lines),
+            size=size,
+            line_height=line_height,
+            fits=cabe,
+            apilado=apilado,
+        )
+        if cabe:
+            return ultimo, True
+
+    assert ultimo is not None
+    return ultimo, False
+
+
+def layout(
+    title: str, typography: Typography, ancho: int = 0, apilado: bool = False
+) -> LaidOutTitle:
+    """Elige el tamano mas grande con el que el titulo cabe en su bloque.
+
+    `ancho` es el ensanche que pidio el episodio, y `apilado` si pidio una
+    palabra por linea. Los dos son elecciones de la semana dentro de lo que el
+    template permite: el bloque no cambia de sitio ni el titulo de tipografia.
+    """
     texto = normalize(title, typography)
     if not texto:
         return LaidOutTitle(lines=(), size=typography.size_min, line_height=0, fits=True)
 
     words = texto.split()
-    # Un lienzo de 1x1: `ImageDraw` solo se necesita para medir, no para dibujar.
-    regla = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    util = typography.ancho(ancho)
 
-    ultimo: LaidOutTitle | None = None
-    for size in range(typography.size_max, typography.size_min - 1, -typography.size_step):
-        font = fonts.load(size)
-        lines = _wrap(regla, words, font, typography.block_width)
-        line_height = int(size * typography.line_spacing)
-        cabe = len(lines) <= typography.max_lines and all(
-            _text_width(regla, line, font) <= typography.block_width for line in lines
-        )
-        ultimo = LaidOutTitle(lines=tuple(lines), size=size, line_height=line_height, fits=cabe)
-        if cabe:
-            return ultimo
+    if apilado:
+        puesto, cupo = _probar(words, typography, util, apilado=True)
+        if cupo:
+            return puesto
+        # No caben apiladas. Se vuelve al corte normal en vez de tirar palabras:
+        # un look no vale media frase. `apilado` sale en False y quien pregunte
+        # puede decirlo en pantalla.
+
+    puesto, cupo = _probar(words, typography, util, apilado=False)
+    if cupo:
+        return puesto
 
     # Ni al minimo cabe: se devuelve igual, recortado a las lineas permitidas.
     # Preferimos un titulo apretado a no dibujar nada (SPEC 11.4: el armado
     # siempre es salida valida).
-    assert ultimo is not None
     return LaidOutTitle(
-        lines=ultimo.lines[: typography.max_lines],
-        size=ultimo.size,
-        line_height=ultimo.line_height,
+        lines=puesto.lines[: typography.max_lines],
+        size=puesto.size,
+        line_height=puesto.line_height,
         fits=False,
     )
 
 
 def draw_title(
-    canvas: Image.Image, title: str, typography: Typography, palette: Palette
+    canvas: Image.Image,
+    title: str,
+    typography: Typography,
+    palette: Palette,
+    ancho: int = 0,
+    apilado: bool = False,
 ) -> LaidOutTitle:
     """Dibuja el titulo y su regla de acento. Modifica `canvas` en el sitio."""
-    puesto = layout(title, typography)
+    puesto = layout(title, typography, ancho, apilado)
     if not puesto.lines:
         return puesto
 

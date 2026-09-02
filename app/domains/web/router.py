@@ -68,12 +68,18 @@ ORDEN_ROLES = ("conductor", "invitado", "fondo", "objeto", "logo", "marco")
 
 ETIQUETAS = {
     "conductor": "Conductor",
-    "invitado": "Invitado",
+    "invitado": "Invitados",
     "fondo": "Fondo",
     "objeto": "Objetos",
     "logo": "Logo",
     "marco": "Marco",
 }
+
+# El nombre de UNA figura del rol. `ETIQUETAS` está en plural justo donde el rol
+# admite varias —«Invitados», «Objetos»— y «ajustar invitados 2» no se entiende:
+# lo que se ajusta es un invitado, el segundo. Solo hacen falta los que pueden
+# venir de a varios; para el resto vale la etiqueta de siempre.
+FIGURAS = {"invitado": "invitado", "objeto": "objeto"}
 
 # Los cinco pasos del trabajo semanal (SPEC §8, pasos 3-8). El prototipo tenía
 # seis porque metía «Logo o marco» dentro; pero SPEC §8 ya cuenta subir el logo
@@ -88,11 +94,16 @@ PASOS = ("conductor", "invitado", "fondo", "objeto", "titulo")
 MARCA = ("logo", "marco")
 
 # Lo que cada rol es, en una línea. Sale del prototipo y de SPEC §6.
+# Los topes salen de `episodes`, que los saca del template: escribir «hasta dos»
+# a mano seria una tercera copia del mismo numero, y la que se quedaria vieja es
+# la de la pantalla -- diciendo que caben dos mientras el flujo deja elegir tres.
 AYUDAS = {
     "conductor": "Tú, con distintos gestos. Va a la derecha y al frente.",
-    "invitado": "Quien viene esta semana. Va al centro, detrás de ti.",
+    "invitado": (
+        f"Quien viene esta semana. Hasta {episodes.MAXIMOS['invitado']}, al centro y detrás de ti."
+    ),
     "fondo": "Opcional. Sin foto se usa el degradado del show, claro u oscuro.",
-    "objeto": "Opcional. Hasta dos, en la banda central.",
+    "objeto": f"Opcional. Hasta {episodes.MAXIMOS['objeto']}, en la banda central.",
     "logo": "Se pega tal cual, arriba a la izquierda. Nunca se reinterpreta.",
     "marco": "El PNG 16:9 del show. Va encima de todo, incluso del título.",
 }
@@ -217,29 +228,47 @@ class Borrador:
 
     seleccion: dict[str, list[str]] = field(default_factory=dict)
     degradado: str = episodes.DEGRADADO_POR_DEFECTO
-    ajustes: dict[str, episodes.Ajuste] = field(default_factory=dict)
+    # Rol -> un ajuste por FIGURA, en el orden en que se eligieron sus fotos.
+    ajustes: dict[str, list[episodes.Ajuste]] = field(default_factory=dict)
 
     def con(self, **cambios) -> "Borrador":
         return replace(self, **cambios)
 
-    def ajuste(self, role: str) -> episodes.Ajuste:
-        return self.ajustes.get(role, episodes.SIN_AJUSTE)
+    def ajuste(self, role: str, posicion: int = 0) -> episodes.Ajuste:
+        figuras = self.ajustes.get(role, ())
+        return figuras[posicion] if posicion < len(figuras) else episodes.SIN_AJUSTE
 
-    def con_ajuste(self, role: str, ajuste: episodes.Ajuste) -> "Borrador":
-        """El mismo borrador con ese rol movido. Un ajuste nulo se borra."""
+    def con_ajuste(self, role: str, posicion: int, ajuste: episodes.Ajuste) -> "Borrador":
+        """El mismo borrador con ESA figura ajustada. Un ajuste nulo se borra.
+
+        Las figuras anteriores que nadie tocó se rellenan con `SIN_AJUSTE`: la
+        posición es lo que dice de quién es el ajuste, así que la lista no puede
+        cerrarse antes de llegar a ella.
+        """
+        figuras = list(self.ajustes.get(role, ()))
+        figuras.extend([episodes.SIN_AJUSTE] * (posicion + 1 - len(figuras)))
+        figuras[posicion] = episodes.acotar(role, ajuste)
+        while figuras and figuras[-1] == episodes.SIN_AJUSTE:
+            figuras.pop()
+
         ajustes = {r: a for r, a in self.ajustes.items() if r != role}
-        acotado = episodes.acotar(role, ajuste)
-        if acotado != episodes.SIN_AJUSTE:
-            ajustes[role] = acotado
+        if figuras:
+            ajustes[role] = figuras
         return replace(self, ajustes=ajustes)
 
     def pares(self) -> list[tuple[str, str]]:
-        """Los campos de la URL: una foto por par, más un ajuste por rol movido."""
+        """Los campos de la URL: una foto por par, más uno por figura ajustada."""
         fotos = [(role, pid) for role, ids in self.seleccion.items() for pid in ids]
-        movidos = [
-            ("ajuste", f"{role}:{a.dx},{a.dy},{a.capa}") for role, a in sorted(self.ajustes.items())
+        ajustados = [
+            (
+                "ajuste",
+                f"{role}.{posicion}:{a.dx},{a.dy},{a.capa},{int(a.voltear_x)},{int(a.voltear_y)}",
+            )
+            for role, figuras in sorted(self.ajustes.items())
+            for posicion, a in enumerate(figuras)
+            if a != episodes.SIN_AJUSTE
         ]
-        return [*fotos, *movidos]
+        return [*fotos, *ajustados]
 
 
 def _seleccion(params) -> dict[str, list[str]]:
@@ -253,28 +282,43 @@ def _seleccion(params) -> dict[str, list[str]]:
 
 
 def _lee_ajustes(valores) -> dict[str, episodes.Ajuste]:
-    """`ajuste=conductor:40,-20,1`, tantos como roles movidos.
+    """`ajuste=invitado.1:40,-20,1,0,1`, uno por figura ajustada.
+
+    Antes del punto va el rol y después la figura dentro de ese rol; los dos
+    últimos números son los volteos. Se aceptan las dos formas viejas —sin
+    posición, y con tres números— para que un enlace que alguien tenía abierto
+    no pierda el ajuste entero por no traer un campo que aún no existía.
 
     Lo que no se entiende se ignora: esto viene de la barra de direcciones, que
     la escribe cualquiera, y un borrador ilegible no es un error — es un
-    borrador sin ese empujón. Quien sí rechaza un rol que no se mueve es
-    `episodes`, al crear el episodio.
+    borrador sin ese ajuste. Quien sí rechaza un rol que no se puede mover o
+    voltear es `episodes`, al crear el episodio.
     """
-    leidos: dict[str, episodes.Ajuste] = {}
+    leidos: dict[str, list[episodes.Ajuste]] = {}
     for texto in valores:
-        role, _, numeros = str(texto).partition(":")
-        if role not in episodes.ROLES_MOVIBLES:
+        figura, _, numeros = str(texto).partition(":")
+        role, _, indice = figura.partition(".")
+        if role not in episodes.ROLES_MOVIBLES and role not in episodes.ROLES_VOLTEABLES:
             continue
         partes = numeros.split(",")
-        if len(partes) != 3:
+        if len(partes) not in (3, 5):
             continue
         try:
-            dx, dy, capa = (int(p) for p in partes)
+            posicion = int(indice) if indice else 0
+            dx, dy, capa, vx, vy = (int(p) for p in [*partes, "0", "0"][:5])
         except ValueError:
             continue
-        acotado = episodes.acotar(role, episodes.Ajuste(dx=dx, dy=dy, capa=capa))
-        if acotado != episodes.SIN_AJUSTE:
-            leidos[role] = acotado
+        if not 0 <= posicion < episodes.MAXIMOS.get(role, 1):
+            continue
+        acotado = episodes.acotar(
+            role,
+            episodes.Ajuste(dx=dx, dy=dy, capa=capa, voltear_x=bool(vx), voltear_y=bool(vy)),
+        )
+        if acotado == episodes.SIN_AJUSTE:
+            continue
+        figuras = leidos.setdefault(role, [])
+        figuras.extend([episodes.SIN_AJUSTE] * (posicion + 1 - len(figuras)))
+        figuras[posicion] = acotado
     return leidos
 
 
@@ -322,38 +366,100 @@ EMPUJONES = (
     ("capa", "Adelante", "Adelante", 0, 0, 1),
 )
 
+# Los volteos, con palabras y no con glifos, por lo mismo que la capa: ⇄ y ⇅ no
+# se distinguen de un golpe de vista, y menos al lado de cuatro flechas que
+# significan otra cosa. Son interruptores: el enlace lleva al estado contrario.
+VOLTEOS = (
+    ("voltear_x", "Espejo", "Voltear de izquierda a derecha"),
+    ("voltear_y", "Boca abajo", "Voltear de arriba a abajo"),
+)
 
-def _empujones(paso: int, borrador: Borrador, role: str) -> dict[str, list[dict]]:
-    """El pad de esta figura: enlaces al MISMO paso, más «como estaba».
+
+def _empujones(paso: int, borrador: Borrador, role: str, posicion: int) -> dict[str, list[dict]]:
+    """El pad de UNA figura: enlaces al MISMO paso, más «como estaba».
+
+    Una figura y no un rol: dos invitados comparten slot y no comparten sitio,
+    así que cada uno trae el suyo. Con un solo invitado hay un solo pad, que es
+    exactamente lo que había.
 
     En un tope el enlace desaparece en vez de quedarse sin hacer nada: `acotar`
     devuelve el mismo ajuste, así que el toque no cambiaría nada y un botón que
-    no puede hacer nada es un botón que miente.
+    no puede hacer nada es un botón que miente. Por eso mismo cada grupo se
+    pregunta por separado: el `fondo` se voltea y no se mueve, así que su pad
+    trae los volteos y ninguna flecha.
     """
-    if role not in episodes.ROLES_MOVIBLES:
-        return {}
-
-    actual = borrador.ajuste(role)
+    actual = borrador.ajuste(role, posicion)
     salto = episodes.AJUSTES.paso
-    pad: dict[str, list[dict]] = {"mover": [], "capa": []}
-    for grupo, etiqueta, titulo, mx, my, mc in EMPUJONES:
-        pedido = episodes.Ajuste(
-            dx=actual.dx + mx * salto, dy=actual.dy + my * salto, capa=actual.capa + mc
-        )
-        movido = borrador.con_ajuste(role, pedido)
-        if movido.ajuste(role) == actual:
-            continue  # el tope: ese toque no movería nada
-        pad[grupo].append({"etiqueta": etiqueta, "titulo": titulo, "url": _url_flujo(paso, movido)})
+    pad: dict[str, list[dict]] = {"mover": [], "capa": [], "voltear": [], "reponer": []}
+
+    if role in episodes.ROLES_MOVIBLES:
+        for grupo, etiqueta, titulo, mx, my, mc in EMPUJONES:
+            pedido = replace(
+                actual,
+                dx=actual.dx + mx * salto,
+                dy=actual.dy + my * salto,
+                capa=actual.capa + mc,
+            )
+            movido = borrador.con_ajuste(role, posicion, pedido)
+            if movido.ajuste(role, posicion) == actual:
+                continue  # el tope: ese toque no movería nada
+            pad[grupo].append(
+                {"etiqueta": etiqueta, "titulo": titulo, "url": _url_flujo(paso, movido)}
+            )
+
+    if role in episodes.ROLES_VOLTEABLES:
+        for campo, etiqueta, titulo in VOLTEOS:
+            puesto = getattr(actual, campo)
+            pad["voltear"].append(
+                {
+                    "etiqueta": etiqueta,
+                    "titulo": titulo,
+                    "puesto": puesto,
+                    "url": _url_flujo(
+                        paso,
+                        borrador.con_ajuste(role, posicion, replace(actual, **{campo: not puesto})),
+                    ),
+                }
+            )
 
     if actual != episodes.SIN_AJUSTE:
-        pad["capa"].append(
+        pad["reponer"].append(
             {
                 "etiqueta": "Como estaba",
                 "titulo": "Como estaba",
-                "url": _url_flujo(paso, borrador.con_ajuste(role, episodes.SIN_AJUSTE)),
+                "url": _url_flujo(paso, borrador.con_ajuste(role, posicion, episodes.SIN_AJUSTE)),
             }
         )
     return pad
+
+
+def _pads(paso: int, borrador: Borrador, role: str, rotulos: dict[str, str]) -> list[dict]:
+    """Un pad por figura elegida de ese rol, en el orden en que se dibujan.
+
+    El título es la etiqueta de la foto cuando hay más de una: con dos pads
+    idénticos uno encima del otro, «invitado» e «invitado» no dicen cuál es
+    cuál, y el de arriba movería al de abajo sin que nada avisara. `rotulos`
+    trae la etiqueta que escribió la persona, no la de `_foto`, que cae al
+    nombre del rol cuando no hay ninguna -- y eso volvería a dejar dos títulos
+    iguales. Sin etiqueta se numera, que es feo pero distingue.
+    """
+    elegidas = borrador.seleccion.get(role, [])
+    if len(elegidas) <= 1:
+        titulos = [ETIQUETAS[role].lower()]
+    else:
+        figura = FIGURAS.get(role, ETIQUETAS[role].lower())
+        titulos = [
+            rotulos.get(photo_id) or f"{figura} {posicion + 1}"
+            for posicion, photo_id in enumerate(elegidas)
+        ]
+    return [
+        {
+            "titulo": titulos[posicion],
+            "ajuste": borrador.ajuste(role, posicion),
+            "filas": _empujones(paso, borrador, role, posicion),
+        }
+        for posicion in range(len(elegidas))
+    ]
 
 
 def _url_flujo(paso: int, borrador: Borrador) -> str:
@@ -362,15 +468,39 @@ def _url_flujo(paso: int, borrador: Borrador) -> str:
     )
 
 
-def _url_preview(borrador: Borrador, title: str = "") -> str:
+def _url_preview(
+    borrador: Borrador, title: str = "", titulo_ancho: int = 0, titulo_apilado: bool = False
+) -> str:
     """El `<img src>` del paso. Lleva lo mismo que la página, más el título.
 
-    El título va SIEMPRE el último: la isla de JS que repinta mientras se teclea
-    corta la URL por `&title=` y le pega lo tecleado.
+    Los tres campos del título van SIEMPRE al final y SIEMPRE los tres, incluso
+    en cero: la isla de JS corta la URL por `&titulo_ancho=` y pega los tres con
+    lo que hay en el formulario. Si alguno faltara a veces, el corte dejaría un
+    valor viejo delante del nuevo — y `preview` lee el primero.
     """
     return "/nueva/preview.jpg?" + urlencode(
-        [*borrador.pares(), ("degradado", borrador.degradado), ("title", title)]
+        [
+            *borrador.pares(),
+            ("degradado", borrador.degradado),
+            ("titulo_ancho", titulo_ancho),
+            ("titulo_apilado", int(titulo_apilado)),
+            ("title", title),
+        ]
     )
+
+
+def _rango_del_ancho() -> dict[str, int]:
+    """Los topes y el paso del ancho del título, para el slider.
+
+    Salen del template por la misma razón que las muestras de fondo: el HTML no
+    puede tener su propia copia de un número de layout.
+    """
+    tipografia = episodes.TIPOGRAFIA
+    return {
+        "min": -tipografia.ancho_menos,
+        "max": tipografia.ancho_mas,
+        "paso": tipografia.ancho_paso,
+    }
 
 
 def _tarjeta_episodio(episode) -> dict:
@@ -645,7 +775,13 @@ def detalle_foto(
 # `def` y no `async def`: aqui dentro corre Pillow.
 @router.get("/nueva/preview.jpg")
 def preview(
-    request: Request, db: Db, settings: Config, user_id: OptionalUser, title: str = ""
+    request: Request,
+    db: Db,
+    settings: Config,
+    user_id: OptionalUser,
+    title: str = "",
+    titulo_ancho: int = 0,
+    titulo_apilado: int = 0,
 ) -> Response:
     """La miniatura de lo que llevo elegido (SPEC §8.4).
 
@@ -678,6 +814,8 @@ def preview(
             title=title,
             degradado=borrador.degradado,
             ajustes=borrador.ajustes,
+            titulo_ancho=titulo_ancho,
+            titulo_apilado=bool(titulo_apilado),
         )
     except AppError:
         # SPEC §11.4 llevado a la UI: el preview es mejora, nunca dependencia.
@@ -706,6 +844,13 @@ def flujo(
         "paso": paso,
         "total": len(PASOS),
         "preview": _url_preview(con_marca),
+        # El rango del ancho del título sale del template y no de la plantilla:
+        # escribirlo en el HTML sería una segunda verdad, y el día que cambie el
+        # bloque el slider seguiría ofreciendo el rango viejo.
+        "titulo": "",
+        "titulo_ancho": 0,
+        "titulo_apilado": False,
+        "ancho_titulo": _rango_del_ancho(),
         "role": role,
         "etiquetas": ETIQUETAS,
         "ayudas": AYUDAS,
@@ -714,7 +859,7 @@ def flujo(
         "intensidades": episodes.STRENGTHS,
         "intensidad": episodes.DEFAULT_STRENGTH,
         "degradado": borrador.degradado,
-        "movidas": sorted(borrador.ajustes),
+        "ajustadas": sorted(borrador.ajustes),
         "atras": _url_flujo(paso - 1, borrador) if paso > 1 else "/",
         "campos": borrador.pares(),
     }
@@ -750,10 +895,9 @@ def flujo(
         "obligatorio": role in episodes.MINIMOS,
         "siguiente": _url_flujo(paso + 1, borrador),
         "roles_con_recorte": library.ROLES_CON_RECORTE,
-        # Empujar esta figura: solo si es de las que se mueven y hay algo que
-        # mover. Un pad de flechas sobre un paso vacío no movería nada.
-        "empujones": _empujones(paso, borrador, role) if elegidas else {},
-        "ajuste": borrador.ajuste(role),
+        # Un pad por figura elegida: dos invitados se ajustan por separado.
+        # Sobre un paso vacío no hay ninguno, porque no habría qué mover.
+        "pads": _pads(paso, borrador, role, {p.id: p.label or "" for p in fotos}),
         # Las dos opciones de fondo, como enlaces al MISMO paso: tocarlas no
         # avanza, repinta. Son enlaces y no radios porque el borrador vive en la
         # URL -- así elegir fondo se deshace con «atrás», como todo lo demás.
@@ -785,6 +929,11 @@ def crear(
     title: Annotated[str, Form()] = "",
     strength: Annotated[str, Form()] = episodes.DEFAULT_STRENGTH,
     degradado: Annotated[str, Form()] = episodes.DEGRADADO_POR_DEFECTO,
+    titulo_ancho: Annotated[int, Form()] = 0,
+    # Una casilla sin marcar no manda «off»: no manda nada. Se lee la PRESENCIA
+    # del campo, nunca su valor -- un `== "on"` funcionaría de casualidad hasta
+    # el día que alguien le cambie el `value`.
+    titulo_apilado: Annotated[str, Form()] = "",
     # Los empujones viajan como texto, uno por rol movido: `conductor:40,-20,1`.
     ajuste: Annotated[list[str], Form()] = [],  # noqa: B006
     # Los roles se declaran uno a uno en vez de leer el formulario entero: en una
@@ -828,6 +977,8 @@ def crear(
             strength=strength,
             degradado=degradado,
             ajustes=ajustes,
+            titulo_ancho=titulo_ancho,
+            titulo_apilado=bool(titulo_apilado),
         )
         episodes.build_assembly(
             db,
@@ -854,8 +1005,13 @@ def crear(
                 "intensidades": episodes.STRENGTHS,
                 "intensidad": strength,
                 "degradado": degradado,
-                "movidas": sorted(ajustes),
+                "ajustadas": sorted(ajustes),
                 "titulo": title,
+                # Lo elegido vuelve puesto: enterarte de que falta algo y perder
+                # de paso cómo habías dejado el título sería dos castigos.
+                "titulo_ancho": titulo_ancho,
+                "titulo_apilado": bool(titulo_apilado),
+                "ancho_titulo": _rango_del_ancho(),
                 "atras": _url_flujo(len(PASOS) - 1, fallido),
                 "campos": fallido.pares(),
                 "preview": _url_preview(
@@ -863,6 +1019,8 @@ def crear(
                         seleccion=fallido.seleccion | {r: [f["id"]] for r, f in marca.items()}
                     ),
                     title,
+                    titulo_ancho,
+                    bool(titulo_apilado),
                 ),
                 "error": _mensaje(error),
             },
@@ -907,7 +1065,7 @@ def resultado(
             # entrada invisible en el checksum del armado sería peor que un dato
             # de más. Solo cuando se ve, que es cuando no hay foto de fondo.
             "fondo_por_defecto": "" if episode.slots.get("fondo") else episode.degradado,
-            "movidas": sorted(episode.ajustes),
+            "ajustadas": sorted(episode.ajustes),
         },
     )
 

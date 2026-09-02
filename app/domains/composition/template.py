@@ -14,7 +14,28 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
 
-TEMPLATE_VERSION = 6
+TEMPLATE_VERSION = 9
+# v9 (2026-09-02): el bloque del titulo deja de ser de un solo ancho. Termina en
+#   x=620 porque ahi empieza el invitado, y con eso las palabras se apilaban
+#   enseguida -- pero el titulo se dibuja ENCIMA de las figuras, asi que
+#   invadirlas es una decision de la semana y no un error. El template autora el
+#   rango y el paso; el episodio elige dentro, y puede ademas pedir una palabra
+#   por linea. Entra tambien `Typography.top`, que hasta ahora no hacia falta:
+#   con tres lineas el titulo nunca llegaba al logo, y apilando si.
+# v8 (2026-09-02): un episodio puede VOLTEAR una figura, de izquierda a derecha
+#   o de arriba a abajo. Es el mismo tipo de decision que el empujon de v6 --
+#   arregla UNA miniatura en vez de cambiar el canal -- y el template sigue
+#   decidiendo lo suyo: QUE se puede voltear (`ROLES_VOLTEABLES`) y que no. Con
+#   nada volteado no cambia ni un pixel; sube igual porque el template decide
+#   algo nuevo, y porque la huella de un ajuste cambia de forma.
+# v7 (2026-09-02): el `invitado` deja de ser uno. Un slot que admite varias
+#   figuras las reparte por la cantidad que TRAE, no por la que admite, y el
+#   reparto lo autora este archivo: cuanto se separan y cuanto se encogen
+#   (`Grupo`). Con un solo invitado no cambia ni un pixel -- un slot con una
+#   figura se dibuja donde siempre -- pero con un solo OBJETO si: hasta aqui un
+#   objeto se colocaba a media separacion a la izquierda del centro del slot,
+#   por repartir para dos aunque solo hubiera uno. Eso era el hueco de la foto
+#   que no vino, y ahora no existe.
 # v6 (2026-09-01): el template deja de decidir la posicion FINAL de una figura y
 #   pasa a decidir la DE PARTIDA: un episodio puede empujar conductor, invitado
 #   y objeto dentro de los limites de `Ajustes`, y reordenarlos entre ellos. Con
@@ -46,6 +67,34 @@ Anchor = Literal["bottom-center", "center", "top-left"]
 
 
 @dataclass(frozen=True, slots=True)
+class Grupo:
+    """Como se reparte un slot cuando trae mas de una figura.
+
+    `separacion` es en pixeles del LIENZO y no en anchos de imagen. Los recortes
+    reales llegan con encuadres muy distintos -- un busto cuadrado mide 520px de
+    ancho a 520 de alto, y uno de medio cuerpo 400 -- asi que repartir por el
+    ancho de la foto haria que la posicion de una cara la decidiera como venia
+    recortado el archivo. Donde va una cara lo decide el template.
+
+    `x` es el centro del grupo, y por defecto es el del slot. Existe porque
+    "donde va uno" y "donde va el centro de dos" no tienen por que coincidir:
+    dos invitados centrados donde iba uno caen sobre el titulo y sobre el
+    conductor a la vez.
+
+    Lo que NO hay aqui es un factor de encogido, y no por falta de ganas: la
+    primera version encogia a los acompanantes y se veia peor. Las figuras se
+    anclan por su BASE, asi que encogerlas les baja la cabeza -- justo hacia la
+    banda donde estan el titulo y el brazo del conductor -- y la cabeza es lo
+    unico que tiene que quedar despejado. A tamano completo las cabezas se
+    quedan arriba, y como son estrechas dos bustos pueden solaparse de hombros
+    sin taparse la cara. Se ve en los PNG, no se deduce.
+    """
+
+    separacion: int
+    x: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Slot:
     """Donde va un rol. `z` decide quien tapa a quien."""
 
@@ -58,6 +107,8 @@ class Slot:
     max_width: int | None = None
     max_height: int | None = None
     max_items: int = 1
+    # Como se reparten cuando son varias. Un slot de una figura no lo necesita.
+    grupo: Grupo | None = None
     shadow: bool = False
 
 
@@ -81,6 +132,9 @@ SLOTS: dict[str, Slot] = {
         y=286,
         max_height=200,
         max_items=2,
+        # 240px entre centros. Antes era "el ancho de la imagen mas 32", que
+        # hacia que la posicion de un objeto dependiera de como venia recortado.
+        grupo=Grupo(separacion=240),
         shadow=True,
     ),
     # `y` cae dentro de la banda del marco: la figura se apoya en ella en vez de
@@ -91,7 +145,24 @@ SLOTS: dict[str, Slot] = {
     # 680px de "figura" es una cabeza que se come el cuadro y tapa al invitado.
     # Con estos valores el invitado pasa de aportar 9,9% de los pixeles a 11,8%,
     # y visualmente el salto es mucho mayor que ese numero.
-    "invitado": Slot(role="invitado", z=2, anchor="bottom-center", x=700, y=556, height=520),
+    #
+    # `max_items=2`: en la semana en que vienen dos, vienen dos. Tres no caben,
+    # y no por el lienzo sino por como se MIRA una miniatura -- a ~320px de
+    # ancho en un feed, tres caras en la banda central son tres manchas.
+    "invitado": Slot(
+        role="invitado",
+        z=2,
+        anchor="bottom-center",
+        x=700,
+        y=556,
+        height=520,
+        max_items=2,
+        # 240px entre centros y el grupo centrado en 620, no en 700: medido
+        # sobre las fotos reales del show, ahi es donde las dos caras caen en el
+        # hueco que dejan el titulo (termina en x=620, pero mas abajo) y el
+        # brazo del conductor (empieza sobre x=780, pero mas abajo tambien).
+        grupo=Grupo(separacion=240, x=620),
+    ),
     "conductor": Slot(role="conductor", z=3, anchor="bottom-center", x=1010, y=560, height=560),
     "logo": Slot(
         role="logo",
@@ -112,6 +183,14 @@ SLOTS: dict[str, Slot] = {
 
 TITLE_Z = 4  # entre el conductor y el logo
 
+# Cuantas figuras admite cada rol. Sale de los SLOTS y no de una lista escrita
+# aparte: el dia que el template admita dos invitados, la API y la pantalla se
+# enteran solas. Con dos listas, una de las dos habria seguido diciendo uno --
+# y quien la creyera rechazaria una seleccion que el armado dibuja sin problema.
+MAX_POR_ROL: Mapping[str, int] = MappingProxyType(
+    {role: slot.max_items for role, slot in SLOTS.items()}
+)
+
 
 # --- lo que un episodio puede mover --------------------------------------
 #
@@ -129,6 +208,16 @@ TITLE_Z = 4  # entre el conductor y el logo
 # completa -- no hay donde moverlos -- y el logo y el titulo son mobiliario de
 # marca (SPEC 11.5): justo los que nunca se tocan.
 ROLES_MOVIBLES = ("objeto", "invitado", "conductor")
+
+# Los roles que un episodio puede VOLTEAR. Son mas que los que puede mover, y
+# no por descuido: el fondo no tiene donde moverse -- va a sangre completa --
+# pero voltearlo es lo que arregla un fondo cuyo motivo cae justo donde va el
+# titulo.
+#
+# Los que faltan son el logo y el marco, y tampoco por descuido: los dos llevan
+# el nombre del show escrito. Un texto en espejo es exactamente "reinterpretar
+# el logo", que es lo unico que SPEC 11.5 prohibe de plano.
+ROLES_VOLTEABLES = ("fondo", "objeto", "invitado", "conductor")
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +256,11 @@ SAFE_BOTTOM = 552
 class Typography:
     left: int = 48
     right: int = 620  # el bloque de titulo de SPEC 6: x 48 -> 620
+    # El techo del bloque. No es el borde del lienzo: el logo ocupa hasta y=130
+    # por la izquierda, que es justo por donde crece un titulo alineado abajo.
+    # Con tres lineas como maximo nunca se llegaba hasta aqui, asi que no hacia
+    # falta decirlo. Apilando una palabra por linea, si.
+    top: int = 150
     # SPEC 6 decia 604. Con marco, la banda con el nombre del show empieza en
     # y=552 y se comia el titulo entero. 500 deja la regla de acento en 522-531,
     # con 21px de aire sobre la banda. Alineado abajo: el titulo crece hacia
@@ -191,9 +285,43 @@ class Typography:
     # cualquiera, sin tener que saber que hay detras.
     stroke_width: int = 5
 
+    # Lo que un episodio puede ensanchar o angostar el bloque, y de cuanto en
+    # cuanto. Es la respuesta a "las palabras se apilan demasiado pronto": el
+    # bloque termina en x=620 porque ahi empieza el invitado, pero el titulo va
+    # ENCIMA de las figuras, asi que meterse sobre una es una decision de la
+    # semana. Los topes son los de siempre: que "ensanchar" no acabe siendo
+    # "poner el titulo donde sea".
+    #
+    # `ancho_mas` llega justo a x=980: el marco tiene 16px de borde y por la
+    # derecha esta el conductor, que a partir de ahi ya no se ve.
+    ancho_paso: int = 40
+    ancho_menos: int = 120
+    ancho_mas: int = 360
+
     @property
     def block_width(self) -> int:
         return self.right - self.left
+
+    def ensanche(self, extra: int) -> int:
+        """El ensanche pedido, dentro de los topes. Nunca lanza (SPEC 11.4)."""
+        return max(-self.ancho_menos, min(self.ancho_mas, extra))
+
+    def ancho(self, extra: int = 0) -> int:
+        """El ancho del bloque con el ensanche de este episodio."""
+        return self.block_width + self.ensanche(extra)
+
+    def max_lineas(self, apilado: bool = False) -> int:
+        """Cuantas lineas se admiten.
+
+        Apilado son las que quepan de verdad entre `top` y `bottom` al tamano
+        minimo, y no el tres de siempre: tres lineas es una regla sobre como se
+        LEE un titulo en un feed, y una palabra por linea es otra forma de
+        leerlo. Lo que no cambia es el alto, que es fisico.
+        """
+        if not apilado:
+            return self.max_lines
+        alto_linea = max(1, int(self.size_min * self.line_spacing))
+        return max(1, (self.bottom - self.top) // alto_linea)
 
 
 TYPOGRAPHY = Typography()

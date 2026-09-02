@@ -15,6 +15,17 @@ def _foto(client, imagen, role, **kw):
     return respuesta.json()["id"]
 
 
+def _foto_asimetrica(client, asimetrica, role):
+    """Una foto que NO da lo mismo volteada: con un color plano, daria."""
+    respuesta = client.post(
+        "/photos",
+        data={"role": role},
+        files={"file": (f"{role}.png", asimetrica(), "image/png")},
+    )
+    assert respuesta.status_code == 201, respuesta.text
+    return respuesta.json()["id"]
+
+
 def _libreria(client, imagen, *roles):
     return {role: _foto(client, imagen, role) for role in roles}
 
@@ -75,6 +86,44 @@ def test_episodes_04_fondo_y_objeto_son_opcionales(logged_in, imagen):
 
     armado = logged_in.post(f"/episodes/{respuesta.json()['id']}/assembly")
     assert armado.status_code == 201
+
+
+def test_episodes_19_un_episodio_puede_llevar_dos_invitados(logged_in, imagen):
+    """La semana en que vienen dos, vienen dos -- y el armado los lleva los dos.
+
+    El tope no se escribe aqui: lo dice el template, que es quien sabe donde
+    caben. Este test lo LEE de ahi en vez de repetir el numero, para que subirlo
+    o bajarlo no deje un test afirmando lo que ya no es.
+    """
+    from app.domains.episodes import api as episodes
+
+    tope = episodes.MAXIMOS["invitado"]
+    assert tope >= 2, "el template ya no admite mas de un invitado"
+
+    conductor = _foto(logged_in, imagen, "conductor")
+    invitados = [
+        _foto(logged_in, imagen, "invitado", label=f"invitado {n}") for n in range(tope + 1)
+    ]
+
+    def _png(seleccion):
+        creado = _crear(logged_in, seleccion)
+        assert creado.status_code == 201, creado.text
+        episode_id = creado.json()["id"]
+        assert logged_in.post(f"/episodes/{episode_id}/assembly").status_code == 201
+        return creado.json(), logged_in.get(f"/episodes/{episode_id}/assembly/file").content
+
+    uno, png_uno = _png({"conductor": conductor, "invitado": invitados[:1]})
+    varios, png_varios = _png({"conductor": conductor, "invitado": invitados[:tope]})
+
+    assert uno["selection"]["invitado"] == invitados[:1]
+    assert varios["selection"]["invitado"] == invitados[:tope]
+    assert png_varios != png_uno, "el segundo invitado no llego a la miniatura"
+
+    # Uno mas de los que caben es un 422 y no un recorte en silencio: quedarse
+    # con los primeros dejaria una miniatura sin la foto que se acaba de elegir.
+    demasiados = _crear(logged_in, {"conductor": conductor, "invitado": invitados})
+    assert demasiados.status_code == 422
+    assert demasiados.json()["error"]["code"] == "EPISODES_SELECTION_INVALID"
 
 
 def test_episodes_05_sin_sesion_es_401(client):
@@ -293,6 +342,108 @@ def test_episodes_16_corregir_el_titulo_cambia_lo_que_sirve_esa_url(logged_in, i
     assert con_etag_viejo.status_code == 200, "el ETag viejo sigue validando"
 
 
+def test_episodes_20_el_episodio_recuerda_los_volteos(logged_in, imagen, asimetrica):
+    """El volteo viaja con el episodio hasta los píxeles.
+
+    Y mover y voltear se preguntan por separado: el `fondo` acepta el volteo y
+    rechaza el empujón, porque va a sangre completa y no hay dónde moverlo.
+    Preguntar los dos permisos juntos habría hecho una de dos cosas mal.
+    """
+    conductor = _foto_asimetrica(logged_in, asimetrica, "conductor")
+    fondo = _foto(logged_in, imagen, "fondo")
+    logo = _foto(logged_in, imagen, "logo")
+    seleccion = {"conductor": conductor}
+
+    volteado = _crear(logged_in, seleccion, ajustes={"conductor": {"voltear_x": True}})
+    assert volteado.status_code == 201, volteado.text
+    assert volteado.json()["ajustes"]["conductor"][0]["voltear_x"] is True
+    assert volteado.json()["ajustes"]["conductor"][0]["voltear_y"] is False
+
+    def _png(respuesta):
+        episode_id = respuesta.json()["id"]
+        assert logged_in.post(f"/episodes/{episode_id}/assembly").status_code == 201
+        return logged_in.get(f"/episodes/{episode_id}/assembly/file").content
+
+    assert _png(volteado) != _png(_crear(logged_in, seleccion)), "el volteo no llegó a la miniatura"
+
+    # El fondo se voltea aunque no se mueva, y pedir moverlo es 422 y no un
+    # ajuste que se traga y no dibuja.
+    con_fondo = {"conductor": conductor, "fondo": fondo}
+    assert _crear(logged_in, con_fondo, ajustes={"fondo": {"voltear_y": True}}).status_code == 201
+    empujado = _crear(logged_in, con_fondo, ajustes={"fondo": {"dx": 40}})
+    assert empujado.status_code == 422
+    assert empujado.json()["error"]["code"] == "EPISODES_SELECTION_INVALID"
+
+    # Y el logo no se voltea: lleva el nombre del show escrito (SPEC §11.5).
+    marca = _crear(
+        logged_in, {"conductor": conductor, "logo": logo}, ajustes={"logo": {"voltear_x": True}}
+    )
+    assert marca.status_code == 422
+    assert marca.json()["error"]["code"] == "EPISODES_SELECTION_INVALID"
+
+
+def test_episodes_21_un_ajuste_por_figura(logged_in, imagen):
+    """Un rol trae una lista de ajustes, en el orden de sus fotos."""
+    from app.domains.episodes import api as episodes
+
+    tope = episodes.MAXIMOS["invitado"]
+    conductor = _foto(logged_in, imagen, "conductor")
+    invitados = [_foto(logged_in, imagen, "invitado", label=f"invitado {n}") for n in range(tope)]
+    seleccion = {"conductor": conductor, "invitado": invitados}
+
+    creado = _crear(logged_in, seleccion, ajustes={"invitado": [{}, {"dx": 40, "capa": 1}]})
+    assert creado.status_code == 201, creado.text
+    guardados = creado.json()["ajustes"]["invitado"]
+    assert len(guardados) == 2
+    assert guardados[0]["dx"] == 0 and guardados[0]["capa"] == 0
+    assert guardados[1]["dx"] == 40 and guardados[1]["capa"] == 1
+
+    # Ajustar más figuras de las que el rol admite es 422: ese ajuste no lo va a
+    # dibujar nadie nunca, y aceptarlo en silencio sería otro botón que miente.
+    demasiados = _crear(logged_in, seleccion, ajustes={"invitado": [{} for _ in range(tope + 1)]})
+    assert demasiados.status_code == 422
+    assert demasiados.json()["error"]["code"] == "EPISODES_SELECTION_INVALID"
+
+    # En cambio el ajuste de una figura que no se llegó a elegir se cae solo: no
+    # es un error de nadie, es haber cambiado de idea sobre una foto.
+    con_uno = _crear(
+        logged_in,
+        {"conductor": conductor, "invitado": invitados[:1]},
+        ajustes={"invitado": [{}, {"dx": 40}]},
+    )
+    assert con_uno.status_code == 201, con_uno.text
+    assert "invitado" not in con_uno.json()["ajustes"]
+
+
+def test_episodes_22_el_episodio_recuerda_como_se_puso_el_titulo(logged_in, imagen):
+    """El ancho del bloque y el apilado viajan con el episodio hasta los píxeles."""
+    from app.domains.episodes import api as episodes
+
+    conductor = _foto(logged_in, imagen, "conductor")
+    seleccion = {"conductor": conductor}
+
+    def _png(respuesta):
+        episode_id = respuesta.json()["id"]
+        assert logged_in.post(f"/episodes/{episode_id}/assembly").status_code == 201
+        return logged_in.get(f"/episodes/{episode_id}/assembly/file").content
+
+    normal = _crear(logged_in, seleccion)
+    ancho = _crear(logged_in, seleccion, titulo_ancho=episodes.TIPOGRAFIA.ancho_mas)
+    apilado = _crear(logged_in, seleccion, titulo_apilado=True)
+
+    assert ancho.json()["titulo_ancho"] == episodes.TIPOGRAFIA.ancho_mas
+    assert apilado.json()["titulo_apilado"] is True
+    assert normal.json()["titulo_ancho"] == 0 and normal.json()["titulo_apilado"] is False
+
+    assert _png(ancho) != _png(normal), "el ancho del título no llegó a la miniatura"
+    assert _png(apilado) != _png(normal), "el apilado no llegó a la miniatura"
+
+    # Un ensanche desmedido se guarda ACOTADO: la fila dice lo que se dibuja.
+    desmedido = _crear(logged_in, seleccion, titulo_ancho=99999)
+    assert desmedido.status_code == 201, desmedido.text
+    assert desmedido.json()["titulo_ancho"] == episodes.TIPOGRAFIA.ancho_mas
+
+
 def test_episodes_17_el_episodio_recuerda_su_fondo_por_defecto(logged_in, imagen):
     """El fondo claro u oscuro viaja con el episodio hasta los pixeles.
 
@@ -344,9 +495,10 @@ def test_episodes_18_el_episodio_recuerda_los_ajustes(logged_in, imagen):
     movido = _crear(logged_in, fotos, ajustes={"conductor": {"dx": -120, "capa": -1}})
     assert movido.status_code == 201, movido.text
 
+    # Una lista por rol: un ajuste por figura, aunque la figura sea una sola.
     guardado = movido.json()["ajustes"]
-    assert guardado["conductor"]["dx"] == -120
-    assert guardado["conductor"]["capa"] == -1
+    assert guardado["conductor"][0]["dx"] == -120
+    assert guardado["conductor"][0]["capa"] == -1
     assert "invitado" not in guardado, "guardo un rol que nadie movio"
 
     def _png(respuesta):
@@ -360,7 +512,7 @@ def test_episodes_18_el_episodio_recuerda_los_ajustes(logged_in, imagen):
     from app.domains.composition import api as composition
 
     desmedido = _crear(logged_in, fotos, ajustes={"conductor": {"dx": 99999}})
-    assert desmedido.json()["ajustes"]["conductor"]["dx"] == composition.AJUSTES.max_x
+    assert desmedido.json()["ajustes"]["conductor"][0]["dx"] == composition.AJUSTES.max_x
 
     # Un ajuste que no mueve nada no deja rastro: pedirlo en cero es no pedirlo.
     en_cero = _crear(logged_in, fotos, ajustes={"conductor": {"dx": 0}})

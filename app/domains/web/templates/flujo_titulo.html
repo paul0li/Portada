@@ -23,6 +23,31 @@
               placeholder="Nadie esperaba esta respuesta">{{ titulo or "" }}</textarea>
   </label>
 
+  {# El título ocupa un bloque que termina donde empieza el invitado, y con eso
+     las palabras se apilan enseguida. Pero el título se dibuja ENCIMA de las
+     figuras, así que ensancharlo es una decisión de la semana. Aquí sí es un
+     slider de verdad y no enlaces como el resto del borrador: los enlaces
+     navegan, y navegar desde este paso se llevaría por delante lo tecleado.
+     Viaja con el formulario, como el título y la intensidad. #}
+  <fieldset class="intensidad">
+    <legend class="rotulo">Cómo se pone el título</legend>
+    <label class="deslizador">
+      <span>Ancho del bloque</span>
+      <input type="range" id="titulo-ancho" name="titulo_ancho"
+             min="{{ ancho_titulo.min }}" max="{{ ancho_titulo.max }}"
+             step="{{ ancho_titulo.paso }}" value="{{ titulo_ancho }}">
+    </label>
+    <div class="fila">
+      <label class="opcion">
+        {# Sin marcar no manda nada -- no manda «off» --, así que el servidor lee
+           la PRESENCIA del campo y no su valor. #}
+        <input type="checkbox" id="titulo-apilado" name="titulo_apilado"
+               {{ "checked" if titulo_apilado }}>
+        <span>Una palabra por línea</span>
+      </label>
+    </div>
+  </fieldset>
+
   <fieldset class="intensidad">
     <legend class="rotulo">Intensidad del acabado</legend>
     <div class="fila">
@@ -54,10 +79,10 @@
         {% endif %}
       </div>
     {% endfor %}
-    {% if movidas %}
+    {% if ajustadas %}
       {# Un empujón cambia la miniatura y no se ve en esta pantalla: decirlo aquí
          es lo mismo que decir qué marco se usa. #}
-      <div><dt>Movidas</dt><dd>{{ movidas|join(", ") }}</dd></div>
+      <div><dt>Ajustadas</dt><dd>{{ ajustadas|join(", ") }}</dd></div>
     {% endif %}
     {# La marca no se pide cada semana, pero se DICE: una entrada invisible en el
        checksum del armado sería peor que un paso de más. #}
@@ -73,19 +98,35 @@
 // Lo único que no puede hacer una navegación: repintar mientras se teclea.
 // Son ~200 ms de espera y ~35 ms de servidor, porque cambiar el título no
 // vuelve a componer la base -- ver COMPOSITION-22.
+// Los tres campos del título repintan igual: el ancho y el apilado cuestan lo
+// mismo que una errata, porque el título es overlay y no toca la base.
+//
+// Y el preview ES el aviso: pedir una palabra por línea con demasiadas palabras
+// vuelve al corte normal —nunca se pierde una palabra— y eso se ve aquí mismo,
+// mientras se teclea, sin que haga falta un cartel que lo explique.
 (() => {
   const campo = document.getElementById("titulo");
   const imagen = document.getElementById("preview");
   if (!campo || !imagen) return;
-  const base = imagen.src.split("&title=")[0];
+  const ancho = document.getElementById("titulo-ancho");
+  const apilado = document.getElementById("titulo-apilado");
+  // Se corta por el PRIMER campo del título: los tres van siempre al final y
+  // siempre los tres, así que lo de delante es el borrador y nada más.
+  const base = imagen.src.split("&titulo_ancho=")[0];
   let pendiente;
-  campo.addEventListener("input", () => {
+  const repintar = () => {
     clearTimeout(pendiente);
     pendiente = setTimeout(() => {
-      imagen.src = base + "&title=" + encodeURIComponent(campo.value);
+      imagen.src = base +
+        "&titulo_ancho=" + (ancho ? ancho.value : 0) +
+        "&titulo_apilado=" + (apilado && apilado.checked ? 1 : 0) +
+        "&title=" + encodeURIComponent(campo.value);
       imagen.style.visibility = "visible";
     }, 200);
-  });
+  };
+  for (const control of [campo, ancho, apilado]) {
+    if (control) control.addEventListener("input", repintar);
+  }
 })();
 </script>
 {% endblock %}
