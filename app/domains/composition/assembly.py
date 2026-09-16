@@ -17,7 +17,7 @@ SPEC 15.1 con un script y fotos reales, sin levantar nada.
 
 import hashlib
 import io
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +29,7 @@ from app.domains.composition.template import (
     BASE_ROLES,
     DEGRADADO_POR_DEFECTO,
     ROLES_MOVIBLES,
+    ROLES_VOLTEABLES,
     TEMPLATE,
     BackgroundTreatment,
     Palette,
@@ -46,17 +47,24 @@ PREVIEW_QUALITY = 82
 
 @dataclass(frozen=True, slots=True)
 class Ajuste:
-    """El empujon de UN rol: cuanto se mueve y en que capa queda.
+    """Lo que un episodio le hace a UN rol: moverlo, cambiarle la capa, voltearlo.
 
     `capa` es relativa a la del template, no absoluta: `+1` es "adelante de
     donde estabas". Asi el cero significa "como manda el template" y el dia que
     cambie el z de un slot, un episodio ajustado se mueve con el, en vez de
     quedarse clavado en un numero que ya no significa lo mismo.
+
+    Los volteos se llaman por el eje del movimiento que YA vive en esta clase:
+    `voltear_x` voltea a lo largo de la x, igual que `dx` mueve a lo largo de la
+    x -- o sea izquierda por derecha. `voltear_y`, arriba por abajo. "Eje
+    horizontal" habria sido ambiguo justo aqui, que es donde no puede serlo.
     """
 
     dx: int = 0
     dy: int = 0
     capa: int = 0
+    voltear_x: bool = False
+    voltear_y: bool = False
 
 
 # "Donde diga el template". Es un singleton y no un `Ajuste()` por llamada para
@@ -79,9 +87,26 @@ class Brief:
     title: str = ""
     photos: Mapping[str, Sequence[Path]] = field(default_factory=dict)
     degradado: str = DEGRADADO_POR_DEFECTO
-    # Rol -> empujon. Un rol ausente es "donde diga el template", que es el caso
-    # normal: los ajustes son la excepcion de una semana, no el estado habitual.
-    ajustes: Mapping[str, Ajuste] = field(default_factory=dict)
+    # Rol -> un ajuste por FIGURA, en el mismo orden que sus fotos. Un rol
+    # ausente, o una lista mas corta que sus fotos, es "donde diga el template":
+    # el caso normal, porque un ajuste es la excepcion de una semana.
+    #
+    # Por figura y no por rol porque un rol puede traer dos: dos invitados
+    # comparten slot pero no comparten sitio, y moverlos juntos es no poder
+    # separarlos.
+    ajustes: Mapping[str, Sequence[Ajuste]] = field(default_factory=dict)
+    # Como se pone el titulo: cuanto se ensancha su bloque, cuanto se mueve el
+    # techo del auto-ajuste de tamano, cuanto sube el techo del bloque, y si va
+    # a una palabra por linea. Todos son OVERLAY: no tocan la base, asi que
+    # cambiarlos cuesta lo mismo que corregir una errata.
+    #
+    # Son tres campos y no uno porque hacen tres cosas: el ancho decide donde
+    # cortan las lineas, el tamano cuanto ocupa cada palabra, y el alto cuantas
+    # lineas entran antes de que el auto-ajuste tenga que achicar.
+    titulo_ancho: int = 0
+    titulo_tamano: int = 0
+    titulo_alto: int = 0
+    titulo_apilado: bool = False
 
     def for_role(self, role: str) -> list[Path]:
         return list(self.photos.get(role, ()))
@@ -95,6 +120,10 @@ class Composition:
     font: str
     title_size: int
     title_fits: bool
+    # Si el titulo se apilo DE VERDAD. Se puede pedir y no caber, y entonces se
+    # vuelve al corte normal en vez de perder palabras: quien pregunta tiene que
+    # poder decirlo en pantalla.
+    title_apilado: bool = False
 
 
 # --- utilidades de imagen ------------------------------------------------
@@ -105,14 +134,22 @@ def _entre(valor: int, tope: int) -> int:
 
 
 def acotar(role: str, ajuste: Ajuste, template: Template = TEMPLATE) -> Ajuste:
-    """El mismo ajuste dentro de los topes del template.
+    """El mismo ajuste dentro de lo que el template permite para ese rol.
 
     Se acota aqui y no solo en quien lo recibe porque este modulo tiene que
     poder dibujar cualquier brief (SPEC 11.4): un numero absurdo mueve la figura
     hasta el tope y ya, nunca la saca del cuadro ni lanza.
+
+    Mover y voltear no van juntos: el `fondo` se puede voltear y no se puede
+    mover, porque va a sangre completa y no hay donde. Por eso son dos listas y
+    no una, y por eso lo que se cae de una no arrastra a la otra.
     """
+    volteos = {
+        "voltear_x": ajuste.voltear_x and role in ROLES_VOLTEABLES,
+        "voltear_y": ajuste.voltear_y and role in ROLES_VOLTEABLES,
+    }
     if role not in ROLES_MOVIBLES:
-        return SIN_AJUSTE
+        return Ajuste(**volteos)
     limites = template.ajustes
     slot = template.slots[role]
     capa = min(max(slot.z + ajuste.capa, limites.capa_min), limites.capa_max)
@@ -120,25 +157,46 @@ def acotar(role: str, ajuste: Ajuste, template: Template = TEMPLATE) -> Ajuste:
         dx=_entre(ajuste.dx, limites.max_x),
         dy=_entre(ajuste.dy, limites.max_y),
         capa=capa - slot.z,
+        **volteos,
     )
 
 
-def ajuste_de(brief: "Brief", role: str, template: Template = TEMPLATE) -> Ajuste:
-    """El ajuste EFECTIVO de un rol: el que se dibuja y el que se hashea.
+def ajuste_de(brief: "Brief", role: str, index: int = 0, template: Template = TEMPLATE) -> Ajuste:
+    """El ajuste EFECTIVO de UNA figura: el que se dibuja y el que se hashea.
 
     Que las dos cosas salgan de la misma funcion es lo que impide que dos briefs
     que dibujan lo mismo tengan checksums distintos -- o peor, al reves.
+
+    Una figura sin ajuste pedido -- porque el rol no trae ninguno, o porque trae
+    menos que figuras -- es "donde diga el template".
     """
-    return acotar(role, brief.ajustes.get(role, SIN_AJUSTE), template)
+    pedidos = brief.ajustes.get(role, ())
+    pedido = pedidos[index] if index < len(pedidos) else SIN_AJUSTE
+    return acotar(role, pedido, template)
 
 
-def _z_efectivo(brief: "Brief", role: str, template: Template) -> int:
-    return template.slots[role].z + ajuste_de(brief, role, template).capa
+def _z_efectivo(brief: "Brief", role: str, index: int, template: Template) -> int:
+    return template.slots[role].z + ajuste_de(brief, role, index, template).capa
 
 
 def _open(path: Path) -> Image.Image:
     with Image.open(path) as img:
         return img.convert("RGBA")
+
+
+def _voltear(img: Image.Image, ajuste: Ajuste) -> Image.Image:
+    """La imagen volteada segun el ajuste. Sin volteos devuelve la misma.
+
+    Se voltea la FIGURA en su sitio, no el lienzo: dos invitados volteados
+    siguen estando uno a la izquierda del otro, cada uno mirando al otro lado.
+    Voltear el grupo entero seria reordenarlos, que es otra cosa y ya la hace
+    elegirlos en otro orden.
+    """
+    if ajuste.voltear_x:
+        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    if ajuste.voltear_y:
+        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    return img
 
 
 # Por debajo de esto, un pixel no es parte de la persona: es la basura que deja
@@ -273,30 +331,44 @@ def _with_shadow(img: Image.Image, palette: Palette) -> Image.Image:
     return lienzo
 
 
+def reparto(slot: Slot, total: int, index: int) -> int:
+    """Cuanto se aparta del slot la figura `index` de las `total` que trae.
+
+    Se reparte por las figuras que HAY, no por las que el slot admite. Repartir
+    por `max_items` deja el hueco de la foto que no vino: un slot de dos con una
+    sola figura la colocaba a media separacion del centro, o sea descentrada por
+    algo que no esta en el cuadro.
+
+    Con una sola figura devuelve 0, que es "donde diga el slot": por eso un
+    invitado solo se dibuja exactamente donde se dibujaba antes de que el slot
+    admitiera dos.
+    """
+    grupo = slot.grupo
+    if grupo is None or total <= 1:
+        return 0
+    centro = 0 if grupo.x is None else grupo.x - slot.x
+    return round(centro + (index - (total - 1) / 2) * grupo.separacion)
+
+
 def _paste(
     canvas: Image.Image,
     img: Image.Image,
     slot: Slot,
-    index: int = 0,
     ajuste: Ajuste = SIN_AJUSTE,
+    desplazamiento: int = 0,
 ) -> None:
-    """Pega segun el ancla del slot. `index` reparte cuando hay varios objetos.
+    """Pega segun el ancla del slot.
 
     `ajuste` empuja el punto de anclaje, no la imagen: el slot sigue decidiendo
     COMO se apoya la figura (por su base, por su centro), y el episodio solo
-    mueve donde cae ese punto.
+    mueve donde cae ese punto. `desplazamiento` es lo que le toca a esta figura
+    dentro de su grupo (ver `reparto`), y se suma al mismo punto.
     """
     if slot.anchor == "top-left":
         canvas.alpha_composite(img, (slot.x + ajuste.dx, slot.y + ajuste.dy))
         return
 
-    x = slot.x + ajuste.dx
-    if slot.max_items > 1:
-        # Varios objetos se separan horizontalmente alrededor del centro del slot.
-        paso = img.width + 32
-        desplazamiento = (index - (slot.max_items - 1) / 2) * paso
-        x = round(x + desplazamiento)
-
+    x = slot.x + ajuste.dx + desplazamiento
     y = slot.y + ajuste.dy
     if slot.anchor == "bottom-center":
         destino = (x - img.width // 2, y - img.height)
@@ -313,9 +385,10 @@ def _draw_base(brief: Brief, template: Template) -> Image.Image:
 
     fondos = brief.for_role("fondo")
     if fondos:
-        canvas.alpha_composite(
-            _treat_background(_open(fondos[0]), template.background, template.canvas)
-        )
+        # El fondo no se puede mover -- va a sangre completa -- pero si voltear:
+        # es lo que arregla un fondo cuyo motivo cae justo detras del titulo.
+        fondo = _voltear(_open(fondos[0]), ajuste_de(brief, "fondo", 0, template))
+        canvas.alpha_composite(_treat_background(fondo, template.background, template.canvas))
     else:
         canvas.alpha_composite(_gradient(template.canvas, template.palette, brief.degradado))
 
@@ -327,32 +400,44 @@ def _draw_base(brief: Brief, template: Template) -> Image.Image:
     # z de las tres figuras va de uno en uno: con el template desempatando, un
     # toque de "atras" empataba al conductor con el invitado y NO cambiaba nada
     # -- hacian falta dos para ver algo, o sea que el primero era un boton que
-    # miente. Empatados, manda quien se movio hacia adelante; y a igualdad de
-    # empujon, el template. Es un orden total, asi que el armado sigue siendo
+    # miente. Empatados, manda quien se movio hacia adelante; a igualdad de
+    # empujon, el template; y entre dos figuras del mismo rol, el orden en que
+    # se eligieron. Es un orden total, asi que el armado sigue siendo
     # determinista.
-    figuras = [role for role in BASE_ROLES if role != "fondo"]
-    for role in sorted(
+    #
+    # Y se ordenan FIGURAS, no roles: es lo que deja poner al segundo invitado
+    # delante del primero. Mientras el orden fue por rol, "adelante" solo sabia
+    # hablar de los tres bloques.
+    figuras = [
+        (role, index, path)
+        for role in BASE_ROLES
+        if role != "fondo"
+        for index, path in enumerate(brief.for_role(role)[: template.slots[role].max_items])
+    ]
+    cuantas = Counter(role for role, _, _ in figuras)
+
+    for role, index, path in sorted(
         figuras,
-        key=lambda r: (
-            _z_efectivo(brief, r, template),
-            ajuste_de(brief, r, template).capa,
-            template.slots[r].z,
+        key=lambda f: (
+            _z_efectivo(brief, f[0], f[1], template),
+            ajuste_de(brief, f[0], f[1], template).capa,
+            template.slots[f[0]].z,
+            f[1],
         ),
     ):
         slot = template.slots[role]
-        ajuste = ajuste_de(brief, role, template)
-        for index, path in enumerate(brief.for_role(role)[: slot.max_items]):
-            # Se recorta al sujeto ANTES de escalar: el slot mide la persona.
-            img = _trim_alpha(_open(path))
-            if slot.height:
-                img = _scale_to_height(img, slot.height)
-            if slot.max_height or slot.max_width:
-                img = _fit_within(
-                    img, slot.max_width or template.canvas[0], slot.max_height or template.canvas[1]
-                )
-            if slot.shadow:
-                img = _with_shadow(img, template.palette)
-            _paste(canvas, img, slot, index, ajuste)
+        ajuste = ajuste_de(brief, role, index, template)
+        # Se recorta al sujeto ANTES de escalar: el slot mide la persona.
+        img = _trim_alpha(_voltear(_open(path), ajuste))
+        if slot.height:
+            img = _scale_to_height(img, slot.height)
+        if slot.max_height or slot.max_width:
+            img = _fit_within(
+                img, slot.max_width or template.canvas[0], slot.max_height or template.canvas[1]
+            )
+        if slot.shadow:
+            img = _with_shadow(img, template.palette)
+        _paste(canvas, img, slot, ajuste, reparto(slot, cuantas[role], index))
 
     return canvas
 
@@ -370,7 +455,16 @@ def _draw_overlay(canvas: Image.Image, brief: Brief, template: Template):
         logo = _fit_within(_open(logos[0]), slot.max_width or 200, slot.max_height or 90)
         _paste(canvas, logo, slot)
 
-    puesto = typography.draw_title(canvas, brief.title, template.typography, template.palette)
+    puesto = typography.draw_title(
+        canvas,
+        brief.title,
+        template.typography,
+        template.palette,
+        brief.titulo_ancho,
+        brief.titulo_apilado,
+        brief.titulo_tamano,
+        brief.titulo_alto,
+    )
 
     # El marco se dibuja el ULTIMO y a sangre completa: es la ventana por la que
     # se ve todo lo demas, asi que va por encima incluso del titulo.
@@ -473,6 +567,7 @@ def compose(brief: Brief, template: Template = TEMPLATE) -> Composition:
         font=fonts.resolve().name,
         title_size=puesto.size,
         title_fits=puesto.fits,
+        title_apilado=puesto.apilado,
     )
 
 
@@ -506,26 +601,46 @@ def preview(brief: Brief, template: Template = TEMPLATE) -> bytes:
 
 
 def _huella_de_ajustes(digest, brief: Brief, template: Template) -> None:
-    """Los ajustes que MUEVEN algo, ya acotados.
+    """Los ajustes que CAMBIAN algo, ya acotados, figura por figura.
 
     Se hashea el efecto y no lo pedido: dos empujones desmedidos que acaban en
     el mismo tope dibujan la misma imagen, y tienen que dar el mismo checksum.
     Y un ajuste que no mueve nada no se escribe, para que pedirlo en cero sea
     indistinguible de no pedirlo -- que es lo que es.
+
+    Por eso mismo solo cuentan las figuras que se DIBUJAN: un ajuste para un
+    segundo invitado que no vino no cambia un pixel, asi que no puede cambiar el
+    checksum. El error a evitar es el contrario -- hashear de menos haria reusar
+    un armado que ya no corresponde -- y por eso el limite se calcula igual que
+    en `_draw_base`, con `max_items` incluido.
     """
-    for role in sorted(ROLES_MOVIBLES):
-        ajuste = ajuste_de(brief, role, template)
-        if ajuste == SIN_AJUSTE:
-            continue
-        digest.update(f"\najuste:{role}={ajuste.dx},{ajuste.dy},{ajuste.capa}".encode())
+    for role in sorted(set(ROLES_MOVIBLES) | set(ROLES_VOLTEABLES)):
+        dibujadas = len(brief.for_role(role)[: template.slots[role].max_items])
+        for index in range(min(len(brief.ajustes.get(role, ())), dibujadas)):
+            ajuste = ajuste_de(brief, role, index, template)
+            if ajuste == SIN_AJUSTE:
+                continue
+            digest.update(
+                f"\najuste:{role}.{index}={ajuste.dx},{ajuste.dy},{ajuste.capa}"
+                f",{int(ajuste.voltear_x)},{int(ajuste.voltear_y)}".encode()
+            )
 
 
 def _huella_de_fotos(digest, brief: Brief, roles) -> None:
+    """Las fotos de esos roles, EN SU ORDEN.
+
+    Los roles se ordenan -- son un conjunto, y da igual por cual se empiece --
+    pero las fotos de un mismo rol no: la primera va a la izquierda del grupo y
+    la segunda a la derecha (ver `reparto`). Ordenarlas por nombre daba el mismo
+    checksum a dos briefs que dibujan cosas distintas, y con eso `build_assembly`
+    devolvia el armado viejo al intercambiar dos invitados: la miniatura no
+    cambiaba y nada fallaba.
+    """
     for role in sorted(roles):
         rutas = brief.photos.get(role)
         if not rutas:
             continue
-        nombres = sorted(Path(p).name for p in rutas)
+        nombres = [Path(p).name for p in rutas]
         digest.update(f"\n{role}={','.join(nombres)}".encode())
 
 
@@ -558,9 +673,16 @@ def brief_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
     digest = hashlib.sha256()
     digest.update(f"v{template.version}\n".encode())
     digest.update(typography.normalize(brief.title, template.typography).encode())
+    # El ensanche y el apilado van AQUI y no en la base: como el titulo, se
+    # dibujan en el overlay, asi que cambiarlos no invalida lo de abajo. Se
+    # hashea el efecto -- el ensanche ya acotado -- y no lo pedido, por lo mismo
+    # que los ajustes: dos peticiones que dibujan igual tienen que coincidir.
+    digest.update(f"\nancho={template.typography.ensanche(brief.titulo_ancho)}".encode())
+    # El techo ya resuelto, no el delta: es el numero que el auto-ajuste usa.
+    digest.update(f"\ntamano={template.typography.tamano(brief.titulo_tamano)}".encode())
+    digest.update(f"\nalto={template.typography.techo(brief.titulo_alto)}".encode())
+    digest.update(f"\napilado={int(brief.titulo_apilado)}".encode())
     digest.update(f"\ndegradado={brief.degradado}".encode())
     _huella_de_ajustes(digest, brief, template)
-    for role in sorted(brief.photos):
-        nombres = sorted(Path(p).name for p in brief.photos[role])
-        digest.update(f"\n{role}={','.join(nombres)}".encode())
+    _huella_de_fotos(digest, brief, brief.photos)
     return digest.hexdigest()

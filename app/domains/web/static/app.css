@@ -538,10 +538,39 @@ a.opcion {
   color: inherit;
 }
 
-a.opcion[aria-current="true"] {
+a.opcion[aria-current="true"],
+/* Los volteos son interruptores y no una elección entre varias: `aria-pressed`
+   y no `aria-current`. Se pintan igual porque «puesto» se ve igual. */
+a.opcion[aria-pressed="true"] {
   border-color: var(--acento);
   color: var(--acento);
   font-weight: 600;
+}
+
+/* Los tres sliders del título -- ancho, tamaño y alto. Son los únicos controles
+   del flujo que no son enlaces: los enlaces navegan, y navegar desde el paso del
+   título se llevaría por delante lo tecleado. 44px de alto para el dedo, como
+   las demás opciones. */
+.deslizador {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.deslizador input[type="range"] {
+  width: 100%;
+  min-height: 44px;
+  accent-color: var(--acento);
+}
+
+/* La línea que explica cuándo manda el tamaño. Va dentro del fieldset y no es
+   un título: se lee una vez y después estorba, así que pesa lo mínimo. */
+.pista {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--tinta-media);
 }
 
 /* El pad para empujar una figura. Reusa `.opcion` porque es lo mismo: una fila

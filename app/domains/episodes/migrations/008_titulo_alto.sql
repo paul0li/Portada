@@ -1,0 +1,19 @@
+-- El techo del bloque del titulo tambien se elige por episodio.
+--
+-- `titulo_alto` es cuanto SUBE ese techo respecto del que dice el template, en
+-- pixeles y en positivo (bajarlo es negativo). Positivo es "mas alto" y no "mas
+-- abajo" a proposito: los mandos del titulo dicen cuanto sitio hay, como
+-- `titulo_ancho`, no hacia donde va la coordenada del lienzo.
+--
+-- Es el tercer mando del titulo y hace lo tercero: el ancho dice donde cortan
+-- las lineas, el tamano cuanto ocupa cada palabra, y el alto cuantas lineas
+-- entran antes de que el auto-ajuste tenga que achicar. El titulo NO se mueve:
+-- sigue apoyado donde dice el template y crece hacia arriba.
+--
+-- Delta y no valor absoluto, como los otros dos: el dia que el template cambie
+-- el bloque, un episodio con el techo subido se mueve con el. Los topes los
+-- pone `composition/template.py`, no un CHECK: son numeros de layout.
+--
+-- Cero es el bloque de siempre, asi que un episodio de antes de esto significa
+-- exactamente lo mismo que antes.
+ALTER TABLE episodes_jobs ADD COLUMN titulo_alto INTEGER NOT NULL DEFAULT 0;

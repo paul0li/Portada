@@ -107,10 +107,10 @@ picture goes in the conductor slot* — nothing more is inferred.
 | ----------- | --- | ---------------------------------------- | - | ----------------------------------------------------- |
 | `fondo`     | 0   | Full bleed 1280×720, cover-fit           | 0 | Desaturate, darken, vignette — it must sit *behind*    |
 | `objeto`    | 0   | Centre band, max 2, ≤220px tall          | 1 | Cutout, drop shadow                                    |
-| `invitado`  | 1   | Bottom, centred at x≈800, ~600px tall    | 2 | Cutout, bleeds off the bottom edge                     |
+| `invitado`  | 1   | Bottom centre band, max 2, ~600px tall   | 2 | Cutout, bleeds off the bottom edge                     |
 | `conductor` | 1   | Bottom right, centred at x≈1040, ~680px  | 3 | Cutout, bleeds off the bottom edge, in front           |
 | `logo`      | 1   | Top-left, ≤200×90, fixed margin          | 5 | **Pasted as-is. Never scaled non-uniformly, never re-rendered** |
-| *(title)*   | 1   | Left block, x 48→620, bottom-aligned     | 4 | Uppercase, auto-fit 64–104px, accent rule beneath      |
+| *(title)*   | 1   | Left block, x 48→620 (widenable), bottom-aligned | 4 | Uppercase, auto-fit 64–104px, accent rule beneath |
 
 Reading the layout left to right: title block on the left, guest in the middle, host largest and
 frontmost on the right, logo top-left, background behind everything. The host and guest overlap by
@@ -128,9 +128,27 @@ Notes:
   the template, not a knob that lets the layout drift (§11.1, §11.3).
 - **The numbers above live in one template file.** Editing them changes every future thumbnail at
   once. That file *is* the show's visual identity, and it's the only place layout is decided.
+- **The guest may be more than one.** In the week two people come, both go in the guest slot. How a
+  pair is laid out — how far apart, and where the pair's centre sits — is authored by the template,
+  exactly like where a single guest goes. What the template deliberately does *not* do is shrink
+  them: figures are anchored by their base, so shrinking drops their heads into the band where the
+  title and the host's arm live, and the head is the one part that has to stay clear. Two full-size
+  busts can overlap at the shoulders without covering each other's face.
 - **An episode may nudge a figure.** `conductor`, `invitado` and `objeto` can be offset in x/y and
   reordered among themselves, in steps and within limits the template sets (§11.1). A nudge can't
   resize anything, can't leave the limits, and can't slip under the background or over the title.
+  A nudge belongs to a **figure**, not to a role: when two guests come, each is adjusted on its own.
+- **An episode may flip a figure**, left-to-right or top-to-bottom. This covers more roles than
+  nudging does — the `fondo` can't be moved (it's full bleed) but flipping it is what fixes a
+  background whose subject sits right where the title goes. The `logo` and the `marco` are the ones
+  it never covers: both carry the show's name in type, and mirrored type is precisely what "never
+  re-rendered" (§11.5) forbids.
+- **An episode may say how the title is set.** The block ends at x=620 because that's where the
+  guest begins, and words stack early inside it — but the title is drawn *over* the figures, so
+  running across one is a decision of the week, not a mistake. The episode can widen or narrow the
+  block within the template's range, and can ask for one word per line. If a title has too many
+  words to stack, it falls back to normal wrapping: stacking is a look, and no look is worth losing
+  half a sentence.
 
 ## 7. The pipeline
 

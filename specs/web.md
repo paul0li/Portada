@@ -45,6 +45,10 @@ la da por puesta.
 - **WEB-19** — volver atrás en el flujo conserva lo ya elegido.
 - **WEB-20** — puedo subir la foto del invitado sin salirme del flujo, y vuelvo al mismo paso con lo elegido intacto (SPEC §8, paso 3: el invitado se sube cada semana).
 - **WEB-21** — la vuelta después de subir es siempre dentro de Portada: una dirección externa se ignora.
+- **WEB-42** — en el paso del título puedo ensanchar el bloque, cambiar el tamaño de la letra y subir su techo —tres sliders— y pedir una palabra por línea, sin perder lo tecleado, y las cuatro cosas llegan al armado. Son tres sliders y no uno porque son tres decisiones distintas (COMPOSITION-38 y 39). Los rangos salen del template, no del HTML.
+- **WEB-41** — con dos invitados hay un pad por cada uno, con su nombre, y mover a uno no mueve al otro.
+- **WEB-40** — puedo voltear la figura desde el paso de ese rol, en los dos ejes y sin salir de él. El botón es un interruptor: el mismo toque pone y quita, y se ve cuál está puesto. El paso del fondo ofrece voltear aunque no ofrezca mover.
+- **WEB-39** — en el paso del invitado puedo elegir dos: el segundo toque suma en vez de reemplazar, el preview los enseña, y los dos llegan al armado. El tercero desplaza al más viejo en vez de perderse en un error.
 - **WEB-38** — puedo empujar al conductor, al invitado y a los objetos, y cambiar qué tapa a quién, desde el paso de ese rol y sin salir de él; el preview lo enseña y la elección llega al armado. En los topes el empujón deja de ofrecerse en vez de no hacer nada.
 - **WEB-37** — en el paso del fondo puedo elegir el degradado claro o el oscuro sin salir del paso, la elección sobrevive hasta el final del flujo, y la miniatura sale con el fondo que elegí.
 

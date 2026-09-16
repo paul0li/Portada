@@ -37,8 +37,8 @@
     {% if fondo_por_defecto %}
       <div><dt>Fondo</dt><dd>{{ fondo_por_defecto|capitalize }}</dd></div>
     {% endif %}
-    {% if movidas %}
-      <div><dt>Movidas</dt><dd>{{ movidas|join(", ") }}</dd></div>
+    {% if ajustadas %}
+      <div><dt>Ajustadas</dt><dd>{{ ajustadas|join(", ") }}</dd></div>
     {% endif %}
     <div><dt>Intensidad</dt><dd>{{ episode.strength }}</dd></div>
     <div><dt>Template</dt><dd>v{{ armado.template_version }}</dd></div>

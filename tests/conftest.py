@@ -119,6 +119,33 @@ def logged_in(client) -> TestClient:
 
 
 @pytest.fixture
+def asimetrica():
+    """Una imagen que NO es simetrica: voltearla se NOTA.
+
+    Existe por una razon concreta: `imagen` pinta un color plano, y un color
+    plano volteado es el mismo color plano. Un test que compare PNGs para
+    comprobar un volteo pasaria con el volteo desconectado -- que es la trampa
+    de "dos situaciones distintas dan el mismo numero" otra vez.
+    """
+    import io
+
+    from PIL import Image, ImageDraw
+
+    def build(*, size=(600, 900), color=(0, 0, 255), marca=(255, 0, 255)):
+        img = Image.new("RGB", size, color)
+        # Una marca en la esquina de arriba a la izquierda: al voltear en x se
+        # va a la derecha, y en y hacia abajo. Asi el test puede decir en que
+        # direccion se volteo, y no solo que algo cambio.
+        ImageDraw.Draw(img).rectangle((0, 0, size[0] // 3, size[1] // 4), fill=marca)
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        return buffer
+
+    return build
+
+
+@pytest.fixture
 def imagen():
     """Una imagen PNG valida, distinta cada vez que cambian los parametros."""
     import io

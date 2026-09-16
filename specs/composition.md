@@ -24,6 +24,38 @@ los topes, meterse debajo del fondo ni taparle el título.
 - **COMPOSITION-28** — un ajuste desmedido se acota a los topes del template en vez de sacar la figura del cuadro, y una capa no puede esconder una figura bajo el fondo ni ponerla sobre el título.
 - **COMPOSITION-29** — los ajustes van en el checksum de la **base**: mover una figura invalida lo de abajo, al revés que el título. Y un ajuste que no mueve nada no produce un checksum distinto.
 
+## Voltear una figura (SPEC §6)
+
+Del mismo tipo que el empujón: arregla **una** miniatura —el invitado mira hacia
+afuera, el motivo del fondo cae justo detrás del título— en vez de cambiar el
+canal entero. Y el template sigue decidiendo lo suyo: **qué** se puede voltear.
+
+- **COMPOSITION-33** — un ajuste puede voltear la figura de izquierda a derecha o de arriba a abajo, y se ve en qué dirección se volteó, no solo que algo cambió. Sin volteo no cambia ni un píxel, y el volteo va en el checksum de la **base**: la figura está debajo del título.
+- **COMPOSITION-34** — el `logo` y el `marco` no se voltean: los dos llevan el nombre del show escrito, y un texto en espejo es reinterpretar la marca (SPEC §11.5). El `fondo` sí, aunque no se pueda mover — son dos permisos distintos y se preguntan por separado.
+
+## Cuando el invitado no es uno (SPEC §6)
+
+El `invitado` deja de ser uno: en la semana en que vienen dos, vienen dos. El
+reparto —cuánto se separan y dónde cae el centro del grupo— lo autora el
+template, como todo lo demás del layout.
+
+- **COMPOSITION-30** — un slot que admite varias figuras las reparte por las que **trae**, no por las que admite: con una sola, la figura cae donde el slot dice y no a media separación, dejando el hueco de la foto que no vino.
+- **COMPOSITION-31** — dos invitados se dibujan los dos, separados por lo que dice el template y dentro del cuadro; con uno solo, la miniatura no cambia ni un píxel respecto de cuando el slot admitía uno.
+- **COMPOSITION-35** — cada figura lleva su propio ajuste: mover al segundo invitado deja al primero donde estaba, y su capa puede ponerlo delante del otro. Un rol con menos ajustes que figuras deja las demás donde dice el template.
+- **COMPOSITION-32** — dentro de un rol, el orden de las fotos es parte del brief: intercambiar dos invitados cambia los píxeles, así que tiene que cambiar el checksum. Ordenar los nombres antes de hashear daba el mismo checksum a dos miniaturas distintas, y con eso armar devolvía la vieja sin recomponer.
+
+## Cómo se pone el título (SPEC §6)
+
+El bloque termina en x=620 porque ahí empieza el invitado, y con eso las
+palabras se apilan enseguida. Pero el título se dibuja **encima** de las
+figuras, así que invadirlas es una decisión de la semana y no un error. El
+template autora el rango y el paso; el episodio elige dentro.
+
+- **COMPOSITION-36** — el episodio puede ensanchar o angostar el bloque del título dentro de los topes del template, y con más ancho el mismo título entra en menos líneas. Angostarlo hasta el tope **no pierde una palabra**: el título crece por encima del bloque antes que quedarse a medias. Un ensanche desmedido se acota en vez de romper nada. Es *overlay*: no invalida la base, así que cuesta lo mismo que corregir una errata.
+- **COMPOSITION-37** — el título puede ir a una palabra por línea. Si no caben tantas, se vuelve al corte normal y se dice cuál se usó: apilar es un look, y ningún look justifica perder media frase.
+- **COMPOSITION-38** — tocar el tamaño le pasa el mando al episodio: ese **es** el tamaño, y deja de regir el máximo de tres líneas. Con el tamaño en cero manda el template, como siempre. Es la diferencia entre repartir el texto y reinterpretarlo: con el auto-ajuste al mando, ensanchar el bloque no cambiaba el corte —subía el tamaño y el título se partía en las mismas líneas, más grande— y angostarlo no apilaba las palabras, las achicaba. Con el tamaño puesto, el ancho reparte y el alto dice hasta dónde pueden crecer. Lo único que sigue cediendo es lo físico: si no entra en el bloque, baja el tamaño hasta que entre. También es *overlay*.
+- **COMPOSITION-39** — el episodio puede subir o bajar el **techo** del bloque del título dentro de los topes del template. El título sigue apoyado donde dice el template y crece hacia arriba, así que subir el techo es dejar entrar más líneas antes de que el auto-ajuste achique la letra —y es lo que hace que «una palabra por línea» quepa con más palabras—. Bajarlo aprieta el bloque y el auto-ajuste responde. También es *overlay*.
+
 ## La separación base / final (SPEC §7)
 
 - **COMPOSITION-06** — `base` no lleva logo ni título; `final` sí. Es lo que el modelo recibiría.

@@ -8,7 +8,7 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 **El frontend está terminado: Portada se usa de punta a punta.** Inicio con el
 punto de entrada y los recientes, la librería, el flujo de cinco pasos con el
 preview en vivo, el resultado descargable y el historial. Desde el teléfono, en
-la LAN, sin nube. **205 tests.**
+la LAN, sin nube. **222 tests.**
 
 Corregir una errata cuesta **89 ms y no 287**: el título es *overlay*, así que se
 pega sobre la misma base, que sigue en la caché (SPEC §7③). Eso valía para el
@@ -174,7 +174,9 @@ Romper una de estas es un bug, no una decisión de diseño.
 - El layout vive en un solo archivo: `composition/template.py` (§6). Un episodio
   puede empujar una figura, pero **hasta dónde y de cuánto en cuánto también lo
   dice ese archivo**: el día que el ajuste se decida en otro sitio, el layout
-  dejó de vivir en un archivo aunque el archivo siga ahí.
+  dejó de vivir en un archivo aunque el archivo siga ahí. Lo mismo con cuántas
+  figuras entran en un rol y cómo se reparten cuando son varias: el tope no se
+  escribe en `episodes` ni en una plantilla, se lee de `SLOTS`.
 - El `marco` es mobiliario de marca: va en el *overlay* junto al logo y el
   título, nunca en la base, y por tanto nunca pasa por un modelo. Pero es un
   asset del show, no un número del template: vive en la librería, como el logo.
@@ -251,6 +253,15 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-30 | **El título se ancla a la línea base**, no a la ascendente | La ascendente la elige cada tipografía a su gusto; anclar a ella hacía que `bottom=500` significara una altura distinta según la fuente | Nada: la línea base es lo que «se apoya en y=500» quiere decir |
 | 2026-08-31 | **La URL del armado se revalida, no se cachea un año** | Es un PUNTERO al último armado, no un archivo: corregir el título produce otro. Con `immutable` el navegador hacía lo correcto —no volver a pedirla— y la miniatura vieja se quedaba en pantalla. `no-cache` + `ETag` cuesta un 304 (3,4 ms) y nunca miente. Lo mismo en `/photos/{id}/file`, que sirve el recorte si está listo y si no el original | Que las URLs pasen a llevar el hash del contenido. Entonces sí son inmutables y el año vuelve |
 | 2026-08-31 | **El historial es una lista de una columna, no una rejilla de dos** | A 430 px, dos miniaturas 16:9 por línea son 96 px de ancho, y a ese tamaño no se reconoce cuál es cuál — que es lo único que un historial tiene que hacer | Una pantalla ancha de verdad, no un teléfono |
+| 2026-09-16 | **Tocar el tamaño le pasa el mando al episodio** (template v10) | «Lo que espero es poder manipular dónde va cada palabra a mi gusto». Con el auto-ajuste al mando eso no se podía, y el motivo no eran los rangos: era el **máximo de tres líneas**. Con ese tope puesto, angostar el bloque no puede apilar las palabras — no le queda más que achicarlas —, así que los tres mandos terminaban pareciendo el mando del tamaño. Ahora hay dos caminos: con el tamaño en cero manda el template (Portada de siempre, ni un píxel distinto en ningún episodio viejo), y en cuanto se toca, el tamaño es el tamaño y la regla de las tres líneas se cae. Entonces el **ancho** reparte las palabras, el **alto** dice hasta dónde pueden crecer, y lo único que cede es lo físico: si no entra en el bloque, baja el tamaño hasta que entre. Rangos: bloque 212–932 px, letra 64–200 px, techo y=250…y=10 | Que haga falta colocar el título de verdad —arrastrarlo, centrarlo, girarlo—. Ahí el título deja de ser «un bloque con mandos» y pasa a ser una figura más, con su `Ajuste` |
+| 2026-09-16 | **El alto del bloque llega hasta arriba del lienzo**, no hasta el borde del marco | Con el auto-ajuste al mando sobraba con y=50: el marco tiene 16 px de borde y ahí arriba ya casi no hay miniatura. Con el tamaño puesto es otra cosa — el alto es **lo que decide si angostar apila o achica**. Si el bloque se queda corto, lo que cede es el tamaño, y entonces el mando del ancho vuelve a comportarse como uno de tamaño, que es justo el problema que veníamos a arreglar. Pasarse del borde del marco es una decisión de la semana, como invadir a una figura: se ve en el preview | Nada |
+| 2026-09-16 | **Los topes se miden, no se razonan** | Dos veces en la misma tarde. Dejé el tamaño bajando solo, razonando que hacia arriba el auto-ajuste ya da el mayor que cabe: falso — medido, «NADIE LO VIO» sale a 104 px en una línea de 99 dentro de un bloque de 350, y lo único que lo frena es `size_max`. Y puse `alto_mas` en y=50 razonando sobre el borde del marco, cuando lo que manda es si el texto apilado entra. Un tope que no se mide es un tope inventado | Nada |
+| 2026-09-02 | **El título se pone: ancho del bloque y una palabra por línea** (template v9) | «Las letras tienen muy poco espacio y se apilan muy rápido» — cierto, y el motivo estaba escrito en `template.py`: el bloque termina en x=620 porque ahí empieza el invitado. Pero el título se dibuja ENCIMA de las figuras, así que invadirlas es una decisión de la semana, no un error. El template autora el rango (−120…+360 px, de 40 en 40) y el episodio elige dentro, como con todo lo demás. Y este SÍ es un slider de verdad, no enlaces como el resto del borrador: desde el paso del título, navegar se llevaría por delante lo tecleado, así que viaja con el formulario y la isla de JS lo repinta igual que el título. Barato por lo mismo que corregir una errata: es *overlay*, no toca la base | Que el título deje de estar alineado a la izquierda. El ensanche es «hasta dónde llega el bloque», y con un título centrado esa pregunta es otra |
+| 2026-09-02 | **Apilar no puede perder una palabra** | «Una palabra por línea» con seis palabras no cabe: ni al tamaño mínimo entran seis líneas entre el logo y la regla de acento. La salida obvia —recortar a las líneas que caben, que es lo que ya hacía el fallback— se come media frase en silencio. Se vuelve al corte normal y el resultado lo dice (`LaidOutTitle.apilado`). No hace falta un cartel: el preview repinta mientras se teclea, así que se VE que no se apiló | Nada |
+| 2026-09-02 | **Un ajuste es de una FIGURA, no de un rol** | Con dos invitados, un ajuste por rol movía a los dos juntos: el empujón que arreglaba a uno se llevaba al otro por delante. Ahora la clave es (rol, posición) y el orden de dibujo se calcula sobre figuras y no sobre roles — que es lo que deja poner al segundo invitado delante del primero. Cuesta una columna (`posicion`) y reconstruir la tabla, porque cambia la PRIMARY KEY | Nada previsible |
+| 2026-09-02 | **Se puede voltear, y el logo y el marco no** (template v8) | Voltear arregla lo mismo que el empujón —el invitado mira hacia afuera, el motivo del fondo cae detrás del título— y por eso vive en el mismo `Ajuste`. Pero la lista de roles NO es la misma: el `fondo` se voltea aunque no se pueda mover (va a sangre completa: no hay dónde), y el logo y el marco no se voltean aunque estén quietos, porque los dos llevan el nombre del show escrito y un texto en espejo es exactamente «reinterpretar el logo» (SPEC §11.5). Dos listas y dos permisos que se preguntan por separado: juntarlos habría rechazado un volteo de fondo válido o tragado un empujón que nadie iba a dibujar | Nada |
+| 2026-09-02 | **El invitado puede ser dos** (template v7) | La semana en que vienen dos, venían dos y entraba uno: el tope decía 1 y no había forma de decirlo. Ahora el reparto de un grupo lo autora el template —cuánto se separan (240 px) y dónde cae el centro del par (x=620, no 700)— así que sigue siendo él quien decide el layout (SPEC §11.1). Dos y no tres: el límite no es el lienzo sino cómo se MIRA una miniatura, y a 320 px tres caras en la banda central son tres manchas. Lo que NO hace es encogerlas, que era lo primero que probé y se veía peor: las figuras se anclan por su base, así que encogerlas les baja la cabeza justo hacia el título y el brazo del conductor — y como las cabezas son estrechas, dos bustos a tamaño completo se solapan de hombros sin taparse la cara. Con un invitado no cambia ni un píxel, comprobado contra el PNG de antes | Que el show quiera tres. Entonces no basta con subir `max_items`: hay que decidir qué se cede, porque a 320 px la tercera cara sale de algún sitio |
+| 2026-09-02 | **Cuántas fotos admite un rol lo dice el template**, no `episodes` | `MAXIMOS` era una segunda lista con los mismos números que `Slot.max_items`. Con dos verdades, la que se queda vieja es la de arriba —rechazando con un 422 una selección que el armado dibuja perfectamente— y encima el flujo web y las ayudas de pantalla leen de ella. Ahora sale de `SLOTS` y baja sola hasta el HTML | Nada; es la misma regla que puso la lista de roles con recorte en `library` en vez de en la plantilla |
 | 2026-09-01 | **Un episodio puede empujar una figura, en x/y y en capa** (template v6) | «El layout es fijo» resultó demasiado fijo: con fotos reales el invitado queda tapado o un objeto pisa el título, y arreglarlo pedía editar `template.py` — cambiar el canal entero para arreglar UNA miniatura. Es un empujón acotado y no colocar libremente: pasos de 20 px, topes de ±400/±200, y la capa efectiva encerrada entre el fondo y el título. Los límites los pone el template, así que sigue siendo él quien decide cuánta libertad hay (SPEC §11.1). En pantalla son enlaces al mismo paso —el borrador ya vivía en la URL— así que sigue sin haber una línea de JS, y en un tope el botón desaparece en vez de no hacer nada | Que haga falta colocar de verdad —arrastrar, rotar, escalar—. Ahí sí vuelve la isla de JS que la decisión de «fuera htmx» tenía como condición, y el ajuste deja de caber en una URL |
 | 2026-09-01 | **El fondo por defecto se elige por episodio: claro u oscuro** (template v5) | El claro se lee peor con el título blanco (ver la fila de abajo) y el oscuro se come una foto de conductor oscura: cuál conviene lo decide la miniatura de la semana, no el archivo. Los dos degradados los autora `template.py`, así que sigue siendo una lista cerrada de nombres y no una perilla libre (SPEC §11.1 y §11.3). Se elige con dos enlaces en el paso del fondo —el borrador vive en la URL, así que se deshace con «atrás» y no costó una línea de JS— y va en el checksum de la BASE, al revés que el título: cambiar de fondo cuesta una composición entera (~250 ms) porque se dibuja debajo de todo | Que un show quiera un fondo que no sea ninguno de los dos. Entonces el fondo es un asset de la librería, como el marco, y esto se convierte en un rol más |
 | 2026-08-31 | **El fondo por defecto es claro** (degradado `(238,240,245)→(188,194,208)`) | Es el fondo que se ve cuando el episodio no trae foto, o sea el caso normal. Sigue siendo neutro frío por lo mismo que en v2: el rojo del acento y el del marco tienen que ser lo único rojo. Cuesta algo: el título es blanco con contorno oscuro, así que sobre claro se lee por el contorno y no por el relleno — comprobado a 320 px, que es como se ve en un feed | Que el título deje de ser blanco. Un título oscuro se leería mejor sobre este degradado, pero peor sobre una foto de fondo, que ya va oscurecida |
@@ -313,6 +324,52 @@ vuelvan a morder en la próxima.
   record ni se construye, así que el error **queda dormido hasta producción** —
   nos tumbó el arranque del servidor con los tests en verde. Dos defensas: los
   tests corren en DEBUG, y `CORE-13` lo caza estáticamente en todo `app/`.
+- **Un fixture de color plano no puede ver un volteo.** Una imagen de un color
+  volteada es la MISMA imagen: un test que comparara PNGs para comprobar el
+  volteo pasaba con el volteo desconectado. Es la trampa de siempre —dos
+  situaciones distintas dando el mismo número— y por eso existe el fixture
+  `asimetrica`, con una marca en una esquina: además de ver que algo cambió,
+  dice en qué dirección se volteó.
+- **Un auto-ajuste puede comerse el mando que le pusiste al lado.** El slider del
+  ancho del bloque parecía agrandar la letra en vez de reorganizar el texto, y
+  hacía exactamente eso: al ensanchar, el auto-ajuste encontraba sitio y subía
+  el tamaño, así que el título se cortaba en las MISMAS líneas y más grande. De
+  −120 a +160 px de ancho el corte no cambiaba ni una palabra — solo el tamaño,
+  de 74 a 104. No rompía nada y ningún test lo veía: el PNG cambiaba, que es lo
+  único que se estaba comprobando. Regla: cuando un mando alimenta a un
+  algoritmo que compensa, hay que mirar QUÉ cambió, no si cambió. `COMPOSITION-38`
+  fija el corte, no los píxeles. Y el mando de al lado tampoco bastó: mientras
+  quedó en pie el máximo de tres líneas, angostar el bloque seguía sin poder
+  apilar. **Un mando nuevo no arregla nada si la regla que lo anulaba sigue ahí.**
+- **Ampliar un rango puede despertar un fallback dormido.** El último recurso del
+  corte automático —«ni al mínimo cabe»— devolvía `lines[:max_lines]`, o sea que
+  se comía las palabras que sobraban. Con el bloque más estrecho que se podía
+  pedir (452 px) no se llegaba nunca; al abrir el rango hasta 212 px, un título
+  de seis palabras salía con tres. No falla ningún test: devuelve un `LaidOutTitle`
+  perfectamente válido, con menos frase. Ahora se dibuja entero aunque se salga
+  por arriba, que es lo que la regla 4 de `typography` decía desde el principio.
+- **Un parámetro opcional rompe un corte de cadena.** La isla de JS del paso del
+  título construye la URL del preview cortando por `&titulo_ancho=` y pegando
+  los tres campos del título. Si `_url_preview` los emitiera solo cuando no son
+  el valor por defecto, el corte dejaría el valor viejo delante del nuevo — y el
+  endpoint lee el PRIMERO, así que el slider no haría nada. Por eso los tres van
+  siempre, incluso en cero. Regla: si alguien corta tu URL por un campo, ese
+  campo no puede ser opcional.
+- **Ordenar antes de hashear puede borrar una diferencia real.** `brief_checksum`
+  ordenaba los nombres de las fotos de un rol antes de hashearlos, y eso estaba
+  bien mientras un rol traía una sola. Con dos invitados, intercambiarlos cambia
+  los píxeles —el primero va a la izquierda— y daba **el mismo checksum**: la
+  caché de bases devolvía la imagen vieja y `build_assembly` la fila vieja, así
+  que la miniatura no cambiaba y no fallaba nada. Lo vigila `COMPOSITION-32`.
+  Corolario: un checksum ordena lo que es un conjunto (los roles) y respeta lo
+  que es una secuencia (las fotos de un rol); confundirlos no da un error, da
+  dos cosas distintas con el mismo nombre.
+- **Repartir por `max_items` deja el hueco de la foto que no vino.** Un slot que
+  admite dos colocaba la única figura que traía a media separación del centro,
+  descentrada por algo que no está en el cuadro. No lo veía nadie porque el
+  único slot de varios era `objeto`, que casi nunca se usa. El reparto se hace
+  por las figuras que HAY (`COMPOSITION-30`), y por eso v7 mueve un objeto solo
+  aunque nadie tocara los objetos.
 - **Un `ETag` correcto no salva a un `Cache-Control` que miente.** La URL del
   armado llevaba `immutable, max-age=1 año` siendo un puntero al *último*
   armado. Al corregir una errata el backend hacía todo bien —nuevo armado, nuevo

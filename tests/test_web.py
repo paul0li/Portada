@@ -499,6 +499,223 @@ def test_web_37_el_fondo_por_defecto_se_elige_en_su_paso(client, imagen):
     )
 
 
+def test_web_42_pongo_el_titulo_ancho_o_apilado(client, imagen):
+    """Los dos sliders y la casilla del título, y que los tres llegan al armado.
+
+    Son los únicos controles del flujo que no son enlaces: desde este paso,
+    navegar se llevaría por delante lo tecleado. Viajan con el formulario, como
+    el título.
+
+    Y son DOS sliders y no uno porque son dos decisiones (COMPOSITION-38): el
+    ancho decide dónde cortan las líneas, el tamaño cuánto ocupa cada palabra.
+    """
+    from app.domains.episodes import api as episodes
+
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    paso = f"/nueva?paso=5&conductor={ids['conductor']}"
+
+    pagina = client.get(paso)
+    assert pagina.status_code == 200
+    # El rango sale del template, no del HTML: con dos copias, la del HTML se
+    # queda vieja el día que el bloque del título cambie.
+    assert f'max="{episodes.TIPOGRAFIA.ancho_mas}"' in pagina.text
+    assert f'min="{-episodes.TIPOGRAFIA.ancho_menos}"' in pagina.text
+    assert f'step="{episodes.TIPOGRAFIA.ancho_paso}"' in pagina.text
+    assert f'min="{-episodes.TIPOGRAFIA.tamano_menos}"' in pagina.text
+    assert f'max="{episodes.TIPOGRAFIA.tamano_mas}"' in pagina.text
+    assert f'step="{episodes.TIPOGRAFIA.tamano_paso}"' in pagina.text
+    assert f'min="{-episodes.TIPOGRAFIA.alto_menos}"' in pagina.text
+    assert f'max="{episodes.TIPOGRAFIA.alto_mas}"' in pagina.text
+    assert f'step="{episodes.TIPOGRAFIA.alto_paso}"' in pagina.text
+    assert 'name="titulo_tamano"' in pagina.text
+    assert 'name="titulo_alto"' in pagina.text
+    assert 'name="titulo_apilado"' in pagina.text
+
+    def _png(**extra):
+        creado = _armar(client, {"conductor": ids["conductor"]}, **extra)
+        assert creado.status_code in (302, 303), creado.text[:400]
+        resultado = client.get(creado.headers["location"])
+        enlace = re.search(r'href="(/episodes/[^"]+/assembly/file)"', resultado.text)
+        return client.get(enlace.group(1)).content
+
+    normal = _png()
+    assert _png(titulo_ancho=episodes.TIPOGRAFIA.ancho_mas) != normal
+    assert _png(titulo_tamano=-episodes.TIPOGRAFIA.tamano_menos) != normal
+    # El alto se ve con un título que tenga de qué crecer: apilado y largo.
+    seis = {"title": "UNO DOS TRES CUATRO CINCO SEIS", "titulo_apilado": "on"}
+    assert _png(**seis, titulo_alto=episodes.TIPOGRAFIA.alto_mas) != _png(**seis)
+    # La casilla manda su presencia, no un valor: así se marca en un formulario.
+    assert _png(titulo_apilado="on") != normal
+
+
+def test_web_41_cada_invitado_tiene_su_pad(client, imagen):
+    """Dos invitados, dos pads: mover a uno no puede mover al otro.
+
+    Y cada pad se titula con la etiqueta de SU foto: dos pads idénticos uno
+    encima del otro no dirían cuál es cuál.
+    """
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    client.post(
+        "/libreria/fotos",
+        data={"role": "invitado", "label": "la segunda invitada"},
+        files={"file": ("segunda.png", imagen(color=(9, 200, 90)))},
+        follow_redirects=False,
+    )
+    segunda = client.get("/photos", params={"role": "invitado"}).json()["photos"][0]["id"]
+
+    paso = (
+        f"/nueva?paso=2&conductor={ids['conductor']}&invitado={ids['invitado']}&invitado={segunda}"
+    )
+    pagina = client.get(paso)
+    assert pagina.status_code == 200
+
+    pads = pagina.text.split('class="empujar"')[1:]
+    assert len(pads) == 2, "dos invitados elegidos y no hay un pad para cada uno"
+    assert "la segunda invitada" in pads[1], "el pad no dice de qué invitada es"
+
+    # El pad del segundo mueve al SEGUNDO: el ajuste lleva su posición.
+    derecha = re.search(r'href="([^"]+)"[^>]*aria-label="Derecha"', pads[1])
+    assert derecha
+    movido = derecha.group(1).replace("&amp;", "&")
+    assert "ajuste=invitado.1" in movido
+    assert "ajuste=invitado.0" not in movido, "mover al segundo movió también al primero"
+
+    # Y el del primero, al primero.
+    primera = re.search(r'href="([^"]+)"[^>]*aria-label="Derecha"', pads[0])
+    assert "ajuste=invitado.0" in primera.group(1).replace("&amp;", "&")
+
+
+def test_web_40_volteo_una_figura_desde_su_paso(client, imagen, asimetrica):
+    """El volteo es un INTERRUPTOR: el mismo toque pone y quita.
+
+    Por eso no basta con comprobar que el enlace existe y cambia el preview: se
+    toca dos veces y tiene que quedar como estaba. Un botón que solo sabe poner
+    es medio botón, y se nota al segundo toque, no al primero.
+    """
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    client.post(
+        "/libreria/fotos",
+        data={"role": "conductor", "label": "conductor asimétrico"},
+        files={"file": ("asimetrica.png", asimetrica())},
+        follow_redirects=False,
+    )
+    conductor = client.get("/photos", params={"role": "conductor"}).json()["photos"][0]["id"]
+    paso1 = f"/nueva?paso=1&conductor={conductor}"
+
+    pagina = client.get(paso1)
+    espejo = re.search(
+        r'href="([^"]+)"[^>]*aria-label="Voltear de izquierda a derecha"', pagina.text
+    )
+    assert espejo, "el paso del conductor no ofrece voltearlo"
+
+    puesto = client.get(espejo.group(1).replace("&amp;", "&"))
+    assert puesto.status_code == 200
+    assert "paso=1" in puesto.text, "voltear me sacó del paso en vez de repintarlo"
+    assert re.search(r'id="preview" src="[^"]*ajuste=conductor[^"]*1', puesto.text), (
+        "el preview no enseña el volteo"
+    )
+    assert re.search(
+        r'<a[^>]*aria-label="Voltear de izquierda a derecha"[^>]*aria-pressed="true"',
+        puesto.text,
+        re.S,
+    ), "el volteo puesto no se ve puesto"
+
+    # El segundo toque lo quita: mismo botón, estado contrario.
+    otra_vez = re.search(
+        r'href="([^"]+)"[^>]*aria-label="Voltear de izquierda a derecha"', puesto.text
+    )
+    quitado = client.get(otra_vez.group(1).replace("&amp;", "&"))
+    # Se mira el PREVIEW y no la página entera: los botones de mover siguen
+    # proponiendo `ajuste=conductor` en sus enlaces, que es lo que tienen que
+    # hacer. Lo que importa es lo que se está dibujando ahora.
+    assert not re.search(r'id="preview" src="[^"]*ajuste=conductor', quitado.text), (
+        "el volteo no se puede quitar"
+    )
+
+    # El paso del fondo ofrece voltear y NO ofrece mover: son dos permisos.
+    paso_fondo = client.get(f"/nueva?paso=3&conductor={conductor}&fondo={ids['fondo']}")
+    assert 'aria-label="Voltear de arriba a abajo"' in paso_fondo.text
+    assert 'aria-label="Izquierda"' not in paso_fondo.text, (
+        "ofrece mover un fondo a sangre completa"
+    )
+
+    # Y llega al armado.
+    def _png(**extra):
+        creado = _armar(client, {"conductor": conductor}, **extra)
+        assert creado.status_code in (302, 303), creado.text[:400]
+        resultado = client.get(creado.headers["location"])
+        enlace = re.search(r'href="(/episodes/[^"]+/assembly/file)"', resultado.text)
+        return client.get(enlace.group(1)).content
+
+    assert _png(ajuste="conductor:0,0,0,1,0") != _png(), "el volteo no llegó a la miniatura"
+
+
+def test_web_39_puedo_elegir_dos_invitados(client, imagen):
+    """La semana en que vienen dos: el segundo toque SUMA en vez de reemplazar.
+
+    La pantalla no sabe cuantos caben -- lo lee de `episodes.MAXIMOS`, que a su
+    vez lo lee del template. Este test hace lo mismo, para que subir o bajar el
+    tope no deje un test afirmando el numero viejo.
+    """
+    from app.domains.episodes import api as episodes
+
+    tope = episodes.MAXIMOS["invitado"]
+    assert tope >= 2, "el template ya no admite mas de un invitado"
+
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    otros = []
+    for n in range(tope):
+        client.post(
+            "/libreria/fotos",
+            data={"role": "invitado", "label": f"invitado extra {n}"},
+            files={"file": (f"extra{n}.png", imagen(color=(10 + n * 60, 200, 90)))},
+            follow_redirects=False,
+        )
+        otros.append(client.get("/photos", params={"role": "invitado"}).json()["photos"][0]["id"])
+
+    paso = f"/nueva?paso=2&conductor={ids['conductor']}&invitado={ids['invitado']}"
+    pagina = client.get(paso)
+    assert pagina.status_code == 200
+
+    # El toque de otra foto deja las DOS puestas, sin salir del paso.
+    suma = re.search(
+        rf'href="(/nueva\?[^"]*invitado={ids["invitado"]}[^"]*invitado={otros[0]}[^"]*)"',
+        pagina.text,
+    )
+    assert suma, "elegir un segundo invitado reemplaza al primero en vez de sumarlo"
+
+    con_dos = client.get(suma.group(1).replace("&amp;", "&"))
+    assert con_dos.status_code == 200
+    assert "paso=2" in con_dos.text, "elegir el segundo me sacó del paso"
+    assert "2 elegida" in con_dos.text
+    src = re.search(r'id="preview" src="([^"]+)"', con_dos.text)
+    assert src and src.group(1).count("invitado=") == 2, "el preview no enseña a los dos"
+
+    # Y los dos llegan al armado, que es lo unico que cuenta.
+    def _png(invitados):
+        creado = _armar(client, {"conductor": ids["conductor"], "invitado": invitados})
+        assert creado.status_code in (302, 303), creado.text[:400]
+        resultado = client.get(creado.headers["location"])
+        enlace = re.search(r'href="(/episodes/[^"]+/assembly/file)"', resultado.text)
+        return client.get(enlace.group(1)).content
+
+    assert _png([ids["invitado"], otros[0]]) != _png([ids["invitado"]])
+
+    # Uno mas de los que caben desplaza al mas viejo en vez de dar un error: en
+    # una grilla de fotos, tocar la siguiente es elegirla, no equivocarse.
+    lleno = "".join(f"&invitado={i}" for i in [ids["invitado"], *otros[: tope - 1]])
+    pagina = client.get(f"/nueva?paso=2&conductor={ids['conductor']}{lleno}")
+    desplaza = re.search(rf'href="(/nueva\?[^"]*invitado={otros[tope - 1]}[^"]*)"', pagina.text)
+    assert desplaza, "la foto de mas no se puede elegir"
+    destino = desplaza.group(1).replace("&amp;", "&")
+    assert destino.count("invitado=") == tope, "elegir una de mas se lleva por delante el tope"
+    assert f"invitado={ids['invitado']}" not in destino, "desplazó a otra que a la más vieja"
+
+
 def test_web_38_empujo_una_figura_desde_su_paso(client, imagen):
     """Mover sin salir del paso, con el preview delante y sin una línea de JS.
 
