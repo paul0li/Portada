@@ -32,5 +32,5 @@ con `composition`, guarda con `intake` y pasa por `finishing`.
 - **EPISODES-18** — el episodio recuerda los ajustes de cada rol y el armado los respeta; ajustar un rol que no se puede mover es 422, no un ajuste ignorado en silencio.
 - **EPISODES-20** — el episodio recuerda los volteos de cada rol y el armado los respeta. Voltear un rol que no se voltea es 422; mover uno que solo se puede voltear, también — el `fondo` acepta el volteo y rechaza el empujón, en la misma petición.
 - **EPISODES-21** — el episodio guarda un ajuste por figura y los devuelve en orden. Ajustar más figuras de las que el rol admite es 422; el ajuste de una figura que no se llegó a elegir simplemente no se guarda, porque no dibujaría nada.
-- **EPISODES-22** — el episodio recuerda cómo se puso el título —cuánto se ensanchó el bloque y si va a una palabra por línea— y el armado lo respeta. Un ensanche desmedido se guarda acotado, no se rechaza.
+- **EPISODES-22** — el episodio recuerda cómo se puso el título —cuánto se ensanchó el bloque, qué tamaño de letra se pidió, dónde quedó su techo y si va a una palabra por línea— y el armado lo respeta. Un ensanche o un tamaño desmedidos se guardan acotados, no se rechazan.
 - **EPISODES-17** — el episodio recuerda qué fondo por defecto se eligió, el armado lo respeta, y un nombre que no existe es un 422 y no un armado con el fondo equivocado.

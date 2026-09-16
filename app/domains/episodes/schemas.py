@@ -43,11 +43,14 @@ class CreateEpisode(BaseModel):
     # raro salga como el 422 del dominio y no como uno de pydantic, que hablaria
     # de tipos en vez de decir cual es la lista de fondos.
     degradado: str = composition.DEGRADADO_POR_DEFECTO
-    # Cuánto se ensancha el bloque del título respecto del que dice el template,
-    # y si el título va a una palabra por línea. El número se acota contra los
+    # Cómo se pone el título, respecto de lo que dice el template: cuánto se
+    # ensancha su bloque, cuánto se mueve el tamaño de la letra, cuánto sube su
+    # techo, y si va a una palabra por línea. Los números se acotan contra los
     # topes del template en vez de rechazarse, como los empujones: lo que el
     # template dice es hasta dónde llega, no cuál es inválido.
     titulo_ancho: int = 0
+    titulo_tamano: int = 0
+    titulo_alto: int = 0
     titulo_apilado: bool = False
     # rol -> un ajuste por FIGURA, en el orden de sus fotos. Se acepta uno
     # suelto o una lista, igual que `selection`: el caso normal es un rol con
@@ -84,8 +87,10 @@ class EpisodeOut(BaseModel):
     title: str
     strength: str
     degradado: str
-    # Ya acotado: lo que se va a dibujar, no lo que se pidió.
+    # Ya acotados: lo que se va a dibujar, no lo que se pidió.
     titulo_ancho: int = 0
+    titulo_tamano: int = 0
+    titulo_alto: int = 0
     titulo_apilado: bool = False
     # Solo los roles ajustados, y con los valores ya acotados: lo que se dibuja.
     # Siempre una lista, aunque entre suelto: a la salida no hay dos formas.

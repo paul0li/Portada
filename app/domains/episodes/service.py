@@ -176,6 +176,8 @@ def create_episode(
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
     ajustes: dict[str, list[composition.Ajuste]] | None = None,
     titulo_ancho: int = 0,
+    titulo_tamano: int = 0,
+    titulo_alto: int = 0,
     titulo_apilado: bool = False,
 ) -> repo.Episode:
     if strength not in finishing.STRENGTHS:
@@ -198,6 +200,8 @@ def create_episode(
             # Se guarda ya acotado, como los ajustes: la fila dice lo que se va
             # a dibujar, no lo que se pidió.
             titulo_ancho=composition.TEMPLATE.typography.ensanche(titulo_ancho),
+            titulo_tamano=composition.TEMPLATE.typography.cambio_de_tamano(titulo_tamano),
+            titulo_alto=composition.TEMPLATE.typography.cambio_de_alto(titulo_alto),
             titulo_apilado=titulo_apilado,
             selection=limpia,
             ajustes=limpios,
@@ -255,6 +259,8 @@ def _brief_de(
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
     ajustes: dict[str, list[composition.Ajuste]] | None = None,
     titulo_ancho: int = 0,
+    titulo_tamano: int = 0,
+    titulo_alto: int = 0,
     titulo_apilado: bool = False,
     referencia: str = "",
 ) -> composition.Brief:
@@ -285,6 +291,8 @@ def _brief_de(
         degradado=degradado,
         ajustes=dict(ajustes or {}),
         titulo_ancho=titulo_ancho,
+        titulo_tamano=titulo_tamano,
+        titulo_alto=titulo_alto,
         titulo_apilado=titulo_apilado,
     )
 
@@ -299,6 +307,8 @@ def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> com
         degradado=episode.degradado,
         ajustes=episode.ajustes,
         titulo_ancho=episode.titulo_ancho,
+        titulo_tamano=episode.titulo_tamano,
+        titulo_alto=episode.titulo_alto,
         titulo_apilado=episode.titulo_apilado,
         referencia=episode.id,
     )
@@ -314,6 +324,8 @@ def preview(
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
     ajustes: dict[str, list[composition.Ajuste]] | None = None,
     titulo_ancho: int = 0,
+    titulo_tamano: int = 0,
+    titulo_alto: int = 0,
     titulo_apilado: bool = False,
 ) -> bytes:
     """La miniatura en pequeno de una seleccion que todavia no es un episodio.
@@ -336,6 +348,8 @@ def preview(
         degradado=degradado,
         ajustes=_solo_las_figuras_elegidas(_validate_ajustes(ajustes), limpia),
         titulo_ancho=titulo_ancho,
+        titulo_tamano=titulo_tamano,
+        titulo_alto=titulo_alto,
         titulo_apilado=titulo_apilado,
     )
     return composition.preview(brief)

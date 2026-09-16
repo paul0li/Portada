@@ -1,0 +1,17 @@
+-- El tamano de la letra del titulo se elige aparte del ancho del bloque.
+--
+-- Con un solo mando, ensanchar el bloque no repartia el texto: el hueco se lo
+-- llevaba el auto-ajuste subiendo el tamano, y el titulo se cortaba en las
+-- mismas lineas, solo que mas grande. Son dos decisiones -- donde cortan las
+-- lineas y cuanto ocupa cada palabra -- y por eso son dos columnas.
+--
+-- `titulo_tamano` es cuanto BAJA el techo del auto-ajuste respecto del tamano
+-- que dice el template, en pixeles y en negativo. Delta y no tamano absoluto
+-- por lo mismo que `titulo_ancho`: el dia que el template cambie el tamano de
+-- los titulos del show, un episodio con la letra achicada se mueve con el en
+-- vez de quedarse clavado en un numero que ya no significa lo mismo. Los topes
+-- los pone `composition/template.py`, no un CHECK: son numeros de layout.
+--
+-- Cero es "el tamano del show, ajustado al texto como siempre", asi que un
+-- episodio de antes de esto significa exactamente lo mismo que antes.
+ALTER TABLE episodes_jobs ADD COLUMN titulo_tamano INTEGER NOT NULL DEFAULT 0;

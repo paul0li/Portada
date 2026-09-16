@@ -500,10 +500,14 @@ def test_web_37_el_fondo_por_defecto_se_elige_en_su_paso(client, imagen):
 
 
 def test_web_42_pongo_el_titulo_ancho_o_apilado(client, imagen):
-    """El slider y la casilla del título, y que las dos cosas llegan al armado.
+    """Los dos sliders y la casilla del título, y que los tres llegan al armado.
 
-    Es el único control del flujo que no es un enlace: desde este paso, navegar
-    se llevaría por delante lo tecleado. Viaja con el formulario, como el título.
+    Son los únicos controles del flujo que no son enlaces: desde este paso,
+    navegar se llevaría por delante lo tecleado. Viajan con el formulario, como
+    el título.
+
+    Y son DOS sliders y no uno porque son dos decisiones (COMPOSITION-38): el
+    ancho decide dónde cortan las líneas, el tamaño cuánto ocupa cada palabra.
     """
     from app.domains.episodes import api as episodes
 
@@ -518,6 +522,14 @@ def test_web_42_pongo_el_titulo_ancho_o_apilado(client, imagen):
     assert f'max="{episodes.TIPOGRAFIA.ancho_mas}"' in pagina.text
     assert f'min="{-episodes.TIPOGRAFIA.ancho_menos}"' in pagina.text
     assert f'step="{episodes.TIPOGRAFIA.ancho_paso}"' in pagina.text
+    assert f'min="{-episodes.TIPOGRAFIA.tamano_menos}"' in pagina.text
+    assert f'max="{episodes.TIPOGRAFIA.tamano_mas}"' in pagina.text
+    assert f'step="{episodes.TIPOGRAFIA.tamano_paso}"' in pagina.text
+    assert f'min="{-episodes.TIPOGRAFIA.alto_menos}"' in pagina.text
+    assert f'max="{episodes.TIPOGRAFIA.alto_mas}"' in pagina.text
+    assert f'step="{episodes.TIPOGRAFIA.alto_paso}"' in pagina.text
+    assert 'name="titulo_tamano"' in pagina.text
+    assert 'name="titulo_alto"' in pagina.text
     assert 'name="titulo_apilado"' in pagina.text
 
     def _png(**extra):
@@ -529,6 +541,10 @@ def test_web_42_pongo_el_titulo_ancho_o_apilado(client, imagen):
 
     normal = _png()
     assert _png(titulo_ancho=episodes.TIPOGRAFIA.ancho_mas) != normal
+    assert _png(titulo_tamano=-episodes.TIPOGRAFIA.tamano_menos) != normal
+    # El alto se ve con un título que tenga de qué crecer: apilado y largo.
+    seis = {"title": "UNO DOS TRES CUATRO CINCO SEIS", "titulo_apilado": "on"}
+    assert _png(**seis, titulo_alto=episodes.TIPOGRAFIA.alto_mas) != _png(**seis)
     # La casilla manda su presencia, no un valor: así se marca en un formulario.
     assert _png(titulo_apilado="on") != normal
 

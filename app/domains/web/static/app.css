@@ -547,9 +547,10 @@ a.opcion[aria-pressed="true"] {
   font-weight: 600;
 }
 
-/* El slider del ancho del título. Es el único control del flujo que no es un
-   enlace: los enlaces navegan, y navegar desde el paso del título se llevaría
-   por delante lo tecleado. 44px de alto para el dedo, como las demás opciones. */
+/* Los tres sliders del título -- ancho, tamaño y alto. Son los únicos controles
+   del flujo que no son enlaces: los enlaces navegan, y navegar desde el paso del
+   título se llevaría por delante lo tecleado. 44px de alto para el dedo, como
+   las demás opciones. */
 .deslizador {
   display: flex;
   flex-direction: column;
@@ -561,6 +562,15 @@ a.opcion[aria-pressed="true"] {
   width: 100%;
   min-height: 44px;
   accent-color: var(--acento);
+}
+
+/* La línea que explica cuándo manda el tamaño. Va dentro del fieldset y no es
+   un título: se lee una vez y después estorba, así que pesa lo mínimo. */
+.pista {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--tinta-media);
 }
 
 /* El pad para empujar una figura. Reusa `.opcion` porque es lo mismo: una fila

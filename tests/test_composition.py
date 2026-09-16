@@ -518,6 +518,117 @@ def test_composition_36_el_titulo_puede_ensancharse(fotos):
     )
 
 
+# El titulo con el que se vio el problema: a cualquier ancho entre -120 y +160
+# se cortaba en las MISMAS tres lineas, y lo unico que cambiaba era el tamano
+# (74 -> 94 -> 104). Ensanchar no repartia el texto: lo agrandaba.
+APRETADO = "NADIE ESPERABA ESTA RESPUESTA DEL INVITADO"
+# Y uno corto, al que no lo frena el bloque sino el techo: una sola línea de
+# 99px en un bloque de 350. Es el que demuestra que subir el techo hace algo.
+CORTO = "NADIE LO VIO"
+
+
+def test_composition_38_con_el_tamano_puesto_mandan_los_mandos(fotos):
+    """Tocar el tamaño le pasa el mando al episodio: ese es el tamaño."""
+    tipografia = template.TYPOGRAPHY
+
+    def _puesto(**campos):
+        return typography.layout(APRETADO, tipografia, **campos)
+
+    # El síntoma, que es lo que se separa: con el tamaño en cero manda el
+    # template, y ensanchar el bloque no cambia el corte — sube el tamaño y el
+    # título se parte en las MISMAS líneas, más grande. Se comprueba para que la
+    # diferencia con el modo directo signifique algo.
+    assert _puesto(ancho=160).lines == _puesto().lines
+    assert _puesto(ancho=160).size > _puesto().size
+
+    # En cuanto se toca el tamaño, ese es el tamaño. Al píxel.
+    chico = -16
+    ancho_libre = {"alto": tipografia.alto_mas}
+    normal = _puesto(tamano=chico, **ancho_libre)
+    assert normal.size == tipografia.tamano(chico)
+
+    # Y entonces angostar APILA en vez de achicar, que es todo el punto: el
+    # ancho reparte las palabras y el tamaño no compensa por detrás.
+    angosto = _puesto(ancho=-tipografia.ancho_menos, tamano=chico, **ancho_libre)
+    assert len(angosto.lines) > len(normal.lines), "angostar no repartió el texto"
+    assert normal.size - angosto.size <= tipografia.size_step, "angostar achicó la letra"
+
+    # Ensanchar hace lo contrario, y tampoco toca el tamaño.
+    ancho = _puesto(ancho=tipografia.ancho_mas, tamano=chico, **ancho_libre)
+    assert len(ancho.lines) < len(normal.lines)
+    assert ancho.size == normal.size
+
+    # Nunca se pierde una palabra, por ningún camino: ni apilando seis líneas en
+    # un bloque de 212px ni cayéndose del modo directo.
+    entero = typography.normalize(APRETADO, tipografia)
+    assert " ".join(angosto.lines) == entero
+    assert " ".join(_puesto(ancho=-tipografia.ancho_menos).lines) == entero
+
+    # Hacia arriba también: a un título corto solo lo frena el techo. CORTO sale
+    # a 104 px en una línea de 99 dentro de un bloque de 350 — el alto sobra.
+    corto = typography.layout(CORTO, tipografia)
+    assert corto.size == tipografia.size_max
+    assert corto.line_height * len(corto.lines) < tipografia.bottom - tipografia.top
+    grande = typography.layout(CORTO, tipografia, tamano=tipografia.tamano_mas, **ancho_libre)
+    assert grande.size == tipografia.tamano(tipografia.tamano_mas)
+
+    # Lo único que sigue cediendo es lo físico: un tamaño que no entra ni con
+    # todo el lienzo baja hasta que entra, en vez de salirse del cuadro.
+    apretado = _puesto(tamano=tipografia.tamano_mas)
+    assert apretado.size < tipografia.tamano(tipografia.tamano_mas)
+    assert " ".join(apretado.lines) == entero
+
+    def _con(**campos):
+        return composition.Brief(
+            title=APRETADO, photos={"conductor": [fotos["conductor"]]}, **campos
+        )
+
+    quieto, achicado = _con(), _con(titulo_tamano=chico)
+    assert composition.compose(achicado).final != composition.compose(quieto).final
+    # Overlay, como el ensanche: la base no se entera.
+    assert composition.base_checksum(achicado) == composition.base_checksum(quieto)
+    assert composition.brief_checksum(achicado) != composition.brief_checksum(quieto)
+    # Un tamaño desmedido se acota, no rompe.
+    assert composition.brief_checksum(_con(titulo_tamano=-99999)) == (
+        composition.brief_checksum(_con(titulo_tamano=-tipografia.tamano_menos))
+    )
+
+
+def test_composition_39_el_bloque_del_titulo_puede_ser_mas_alto(fotos):
+    """El techo sube y baja; el título sigue apoyado donde dice el template."""
+    tipografia = template.TYPOGRAPHY
+
+    # Subir el techo es subirlo de verdad, y bajarlo, bajarlo.
+    assert tipografia.techo(tipografia.alto_mas) < tipografia.top
+    assert tipografia.techo(-tipografia.alto_menos) > tipografia.top
+
+    # Donde más se ve es apilando: SEIS palabras no caben en el bloque de
+    # siempre —ni al tamaño mínimo entran seis líneas— y se vuelve al corte
+    # normal sin perder ninguna (COMPOSITION-37). Con el techo arriba, caben.
+    seis = "UNO DOS TRES CUATRO CINCO SEIS"
+    assert typography.layout(seis, tipografia, apilado=True).apilado is False
+    subido = typography.layout(seis, tipografia, apilado=True, alto=tipografia.alto_mas)
+    assert subido.apilado is True
+    assert subido.lines == tuple(seis.split())
+
+    # Y bajarlo aprieta: el bloque tiene menos alto, así que el auto-ajuste
+    # responde achicando. El título no se mueve de donde se apoya.
+    apretado = typography.layout(APRETADO, tipografia, alto=-tipografia.alto_menos)
+    assert apretado.size < typography.layout(APRETADO, tipografia).size
+
+    def _con(**campos):
+        return composition.Brief(
+            title=seis, photos={"conductor": [fotos["conductor"]]}, titulo_apilado=True, **campos
+        )
+
+    quieto, alto = _con(), _con(titulo_alto=tipografia.alto_mas)
+    assert composition.compose(alto).final != composition.compose(quieto).final
+    # Overlay, como los otros dos mandos del título.
+    assert composition.base_checksum(alto) == composition.base_checksum(quieto)
+    assert composition.brief_checksum(alto) != composition.brief_checksum(quieto)
+    assert composition.brief_checksum(_con(titulo_alto=99999)) == composition.brief_checksum(alto)
+
+
 def test_composition_37_el_titulo_puede_ir_una_palabra_por_linea():
     """Y si no caben, se vuelve al corte normal SIN perder una palabra."""
     tipografia = template.TYPOGRAPHY
@@ -797,7 +908,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "e31eecb160d5114f"
+HUELLA_DEL_TEMPLATE = "2d8825e11ce06b4a"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():

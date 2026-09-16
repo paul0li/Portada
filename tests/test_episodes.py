@@ -416,7 +416,7 @@ def test_episodes_21_un_ajuste_por_figura(logged_in, imagen):
 
 
 def test_episodes_22_el_episodio_recuerda_como_se_puso_el_titulo(logged_in, imagen):
-    """El ancho del bloque y el apilado viajan con el episodio hasta los píxeles."""
+    """El ancho, el tamaño y el apilado viajan con el episodio hasta los píxeles."""
     from app.domains.episodes import api as episodes
 
     conductor = _foto(logged_in, imagen, "conductor")
@@ -427,21 +427,45 @@ def test_episodes_22_el_episodio_recuerda_como_se_puso_el_titulo(logged_in, imag
         assert logged_in.post(f"/episodes/{episode_id}/assembly").status_code == 201
         return logged_in.get(f"/episodes/{episode_id}/assembly/file").content
 
+    chico = -episodes.TIPOGRAFIA.tamano_menos
     normal = _crear(logged_in, seleccion)
     ancho = _crear(logged_in, seleccion, titulo_ancho=episodes.TIPOGRAFIA.ancho_mas)
+    tamano = _crear(logged_in, seleccion, titulo_tamano=chico)
+    # El alto se ve cuando el título tiene de qué crecer: apilado y con más
+    # palabras de las que caben en el bloque de siempre.
+    alto = _crear(
+        logged_in,
+        seleccion,
+        title="UNO DOS TRES CUATRO CINCO SEIS",
+        titulo_apilado=True,
+        titulo_alto=episodes.TIPOGRAFIA.alto_mas,
+    )
+    sin_alto = _crear(
+        logged_in, seleccion, title="UNO DOS TRES CUATRO CINCO SEIS", titulo_apilado=True
+    )
     apilado = _crear(logged_in, seleccion, titulo_apilado=True)
 
     assert ancho.json()["titulo_ancho"] == episodes.TIPOGRAFIA.ancho_mas
+    assert tamano.json()["titulo_tamano"] == chico
+    assert alto.json()["titulo_alto"] == episodes.TIPOGRAFIA.alto_mas
     assert apilado.json()["titulo_apilado"] is True
     assert normal.json()["titulo_ancho"] == 0 and normal.json()["titulo_apilado"] is False
+    assert normal.json()["titulo_tamano"] == 0 and normal.json()["titulo_alto"] == 0
 
     assert _png(ancho) != _png(normal), "el ancho del título no llegó a la miniatura"
+    assert _png(tamano) != _png(normal), "el tamaño de la letra no llegó a la miniatura"
+    assert _png(alto) != _png(sin_alto), "el alto del bloque no llegó a la miniatura"
     assert _png(apilado) != _png(normal), "el apilado no llegó a la miniatura"
 
-    # Un ensanche desmedido se guarda ACOTADO: la fila dice lo que se dibuja.
-    desmedido = _crear(logged_in, seleccion, titulo_ancho=99999)
+    # Un ensanche o un tamaño desmedidos se guardan ACOTADOS, no se rechazan:
+    # la fila dice lo que se va a dibujar.
+    desmedido = _crear(
+        logged_in, seleccion, titulo_ancho=99999, titulo_tamano=99999, titulo_alto=99999
+    )
     assert desmedido.status_code == 201, desmedido.text
     assert desmedido.json()["titulo_ancho"] == episodes.TIPOGRAFIA.ancho_mas
+    assert desmedido.json()["titulo_tamano"] == episodes.TIPOGRAFIA.tamano_mas
+    assert desmedido.json()["titulo_alto"] == episodes.TIPOGRAFIA.alto_mas
 
 
 def test_episodes_17_el_episodio_recuerda_su_fondo_por_defecto(logged_in, imagen):

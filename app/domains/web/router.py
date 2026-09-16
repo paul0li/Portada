@@ -469,20 +469,27 @@ def _url_flujo(paso: int, borrador: Borrador) -> str:
 
 
 def _url_preview(
-    borrador: Borrador, title: str = "", titulo_ancho: int = 0, titulo_apilado: bool = False
+    borrador: Borrador,
+    title: str = "",
+    titulo_ancho: int = 0,
+    titulo_tamano: int = 0,
+    titulo_alto: int = 0,
+    titulo_apilado: bool = False,
 ) -> str:
     """El `<img src>` del paso. Lleva lo mismo que la página, más el título.
 
-    Los tres campos del título van SIEMPRE al final y SIEMPRE los tres, incluso
-    en cero: la isla de JS corta la URL por `&titulo_ancho=` y pega los tres con
-    lo que hay en el formulario. Si alguno faltara a veces, el corte dejaría un
-    valor viejo delante del nuevo — y `preview` lee el primero.
+    Los campos del título van SIEMPRE al final y SIEMPRE todos, incluso en cero:
+    la isla de JS corta la URL por `&titulo_ancho=` y pega los cuatro con lo que
+    hay en el formulario. Si alguno faltara a veces, el corte dejaría un valor
+    viejo delante del nuevo — y `preview` lee el primero.
     """
     return "/nueva/preview.jpg?" + urlencode(
         [
             *borrador.pares(),
             ("degradado", borrador.degradado),
             ("titulo_ancho", titulo_ancho),
+            ("titulo_tamano", titulo_tamano),
+            ("titulo_alto", titulo_alto),
             ("titulo_apilado", int(titulo_apilado)),
             ("title", title),
         ]
@@ -500,6 +507,35 @@ def _rango_del_ancho() -> dict[str, int]:
         "min": -tipografia.ancho_menos,
         "max": tipografia.ancho_mas,
         "paso": tipografia.ancho_paso,
+    }
+
+
+def _rango_del_tamano() -> dict[str, int]:
+    """Lo mismo para el tamaño de la letra, que es el OTRO mando del título.
+
+    En cero el slider deja el tamaño del template, que es lo que Portada hacía
+    antes de que este mando existiera: el auto-ajuste elige el mayor que quepa.
+    """
+    tipografia = episodes.TIPOGRAFIA
+    return {
+        "min": -tipografia.tamano_menos,
+        "max": tipografia.tamano_mas,
+        "paso": tipografia.tamano_paso,
+    }
+
+
+def _rango_del_alto() -> dict[str, int]:
+    """Y el tercero: hasta dónde puede crecer el título hacia arriba.
+
+    Positivo es MÁS ALTO, no «más abajo»: los tres sliders dicen cuánto sitio
+    hay. Que arriba sea una `y` más chica es cosa del lienzo, y la traducción la
+    hace el template en `techo`, no la pantalla.
+    """
+    tipografia = episodes.TIPOGRAFIA
+    return {
+        "min": -tipografia.alto_menos,
+        "max": tipografia.alto_mas,
+        "paso": tipografia.alto_paso,
     }
 
 
@@ -781,6 +817,8 @@ def preview(
     user_id: OptionalUser,
     title: str = "",
     titulo_ancho: int = 0,
+    titulo_tamano: int = 0,
+    titulo_alto: int = 0,
     titulo_apilado: int = 0,
 ) -> Response:
     """La miniatura de lo que llevo elegido (SPEC §8.4).
@@ -815,6 +853,8 @@ def preview(
             degradado=borrador.degradado,
             ajustes=borrador.ajustes,
             titulo_ancho=titulo_ancho,
+            titulo_tamano=titulo_tamano,
+            titulo_alto=titulo_alto,
             titulo_apilado=bool(titulo_apilado),
         )
     except AppError:
@@ -849,8 +889,12 @@ def flujo(
         # bloque el slider seguiría ofreciendo el rango viejo.
         "titulo": "",
         "titulo_ancho": 0,
+        "titulo_tamano": 0,
+        "titulo_alto": 0,
         "titulo_apilado": False,
         "ancho_titulo": _rango_del_ancho(),
+        "tamano_titulo": _rango_del_tamano(),
+        "alto_titulo": _rango_del_alto(),
         "role": role,
         "etiquetas": ETIQUETAS,
         "ayudas": AYUDAS,
@@ -930,6 +974,8 @@ def crear(
     strength: Annotated[str, Form()] = episodes.DEFAULT_STRENGTH,
     degradado: Annotated[str, Form()] = episodes.DEGRADADO_POR_DEFECTO,
     titulo_ancho: Annotated[int, Form()] = 0,
+    titulo_tamano: Annotated[int, Form()] = 0,
+    titulo_alto: Annotated[int, Form()] = 0,
     # Una casilla sin marcar no manda «off»: no manda nada. Se lee la PRESENCIA
     # del campo, nunca su valor -- un `== "on"` funcionaría de casualidad hasta
     # el día que alguien le cambie el `value`.
@@ -978,6 +1024,8 @@ def crear(
             degradado=degradado,
             ajustes=ajustes,
             titulo_ancho=titulo_ancho,
+            titulo_tamano=titulo_tamano,
+            titulo_alto=titulo_alto,
             titulo_apilado=bool(titulo_apilado),
         )
         episodes.build_assembly(
@@ -1010,8 +1058,12 @@ def crear(
                 # Lo elegido vuelve puesto: enterarte de que falta algo y perder
                 # de paso cómo habías dejado el título sería dos castigos.
                 "titulo_ancho": titulo_ancho,
+                "titulo_tamano": titulo_tamano,
+                "titulo_alto": titulo_alto,
                 "titulo_apilado": bool(titulo_apilado),
                 "ancho_titulo": _rango_del_ancho(),
+                "tamano_titulo": _rango_del_tamano(),
+                "alto_titulo": _rango_del_alto(),
                 "atras": _url_flujo(len(PASOS) - 1, fallido),
                 "campos": fallido.pares(),
                 "preview": _url_preview(
@@ -1020,6 +1072,8 @@ def crear(
                     ),
                     title,
                     titulo_ancho,
+                    titulo_tamano,
+                    titulo_alto,
                     bool(titulo_apilado),
                 ),
                 "error": _mensaje(error),

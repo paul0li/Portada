@@ -51,8 +51,10 @@ palabras se apilan enseguida. Pero el título se dibuja **encima** de las
 figuras, así que invadirlas es una decisión de la semana y no un error. El
 template autora el rango y el paso; el episodio elige dentro.
 
-- **COMPOSITION-36** — el episodio puede ensanchar o angostar el bloque del título dentro de los topes del template, y con más ancho el mismo título entra en menos líneas. Un ensanche desmedido se acota en vez de romper nada. Es *overlay*: no invalida la base, así que cuesta lo mismo que corregir una errata.
+- **COMPOSITION-36** — el episodio puede ensanchar o angostar el bloque del título dentro de los topes del template, y con más ancho el mismo título entra en menos líneas. Angostarlo hasta el tope **no pierde una palabra**: el título crece por encima del bloque antes que quedarse a medias. Un ensanche desmedido se acota en vez de romper nada. Es *overlay*: no invalida la base, así que cuesta lo mismo que corregir una errata.
 - **COMPOSITION-37** — el título puede ir a una palabra por línea. Si no caben tantas, se vuelve al corte normal y se dice cuál se usó: apilar es un look, y ningún look justifica perder media frase.
+- **COMPOSITION-38** — tocar el tamaño le pasa el mando al episodio: ese **es** el tamaño, y deja de regir el máximo de tres líneas. Con el tamaño en cero manda el template, como siempre. Es la diferencia entre repartir el texto y reinterpretarlo: con el auto-ajuste al mando, ensanchar el bloque no cambiaba el corte —subía el tamaño y el título se partía en las mismas líneas, más grande— y angostarlo no apilaba las palabras, las achicaba. Con el tamaño puesto, el ancho reparte y el alto dice hasta dónde pueden crecer. Lo único que sigue cediendo es lo físico: si no entra en el bloque, baja el tamaño hasta que entre. También es *overlay*.
+- **COMPOSITION-39** — el episodio puede subir o bajar el **techo** del bloque del título dentro de los topes del template. El título sigue apoyado donde dice el template y crece hacia arriba, así que subir el techo es dejar entrar más líneas antes de que el auto-ajuste achique la letra —y es lo que hace que «una palabra por línea» quepa con más palabras—. Bajarlo aprieta el bloque y el auto-ajuste responde. También es *overlay*.
 
 ## La separación base / final (SPEC §7)
 

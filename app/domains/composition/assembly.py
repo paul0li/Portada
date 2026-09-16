@@ -95,10 +95,17 @@ class Brief:
     # comparten slot pero no comparten sitio, y moverlos juntos es no poder
     # separarlos.
     ajustes: Mapping[str, Sequence[Ajuste]] = field(default_factory=dict)
-    # Cuanto se ensancha el bloque del titulo respecto del que dice el template,
-    # y si el titulo va a una palabra por linea. Los dos son OVERLAY: no tocan
-    # la base, asi que cambiarlos cuesta lo mismo que corregir una errata.
+    # Como se pone el titulo: cuanto se ensancha su bloque, cuanto se mueve el
+    # techo del auto-ajuste de tamano, cuanto sube el techo del bloque, y si va
+    # a una palabra por linea. Todos son OVERLAY: no tocan la base, asi que
+    # cambiarlos cuesta lo mismo que corregir una errata.
+    #
+    # Son tres campos y no uno porque hacen tres cosas: el ancho decide donde
+    # cortan las lineas, el tamano cuanto ocupa cada palabra, y el alto cuantas
+    # lineas entran antes de que el auto-ajuste tenga que achicar.
     titulo_ancho: int = 0
+    titulo_tamano: int = 0
+    titulo_alto: int = 0
     titulo_apilado: bool = False
 
     def for_role(self, role: str) -> list[Path]:
@@ -455,6 +462,8 @@ def _draw_overlay(canvas: Image.Image, brief: Brief, template: Template):
         template.palette,
         brief.titulo_ancho,
         brief.titulo_apilado,
+        brief.titulo_tamano,
+        brief.titulo_alto,
     )
 
     # El marco se dibuja el ULTIMO y a sangre completa: es la ventana por la que
@@ -669,6 +678,9 @@ def brief_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
     # hashea el efecto -- el ensanche ya acotado -- y no lo pedido, por lo mismo
     # que los ajustes: dos peticiones que dibujan igual tienen que coincidir.
     digest.update(f"\nancho={template.typography.ensanche(brief.titulo_ancho)}".encode())
+    # El techo ya resuelto, no el delta: es el numero que el auto-ajuste usa.
+    digest.update(f"\ntamano={template.typography.tamano(brief.titulo_tamano)}".encode())
+    digest.update(f"\nalto={template.typography.techo(brief.titulo_alto)}".encode())
     digest.update(f"\napilado={int(brief.titulo_apilado)}".encode())
     digest.update(f"\ndegradado={brief.degradado}".encode())
     _huella_de_ajustes(digest, brief, template)

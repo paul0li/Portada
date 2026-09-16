@@ -31,11 +31,41 @@
      Viaja con el formulario, como el título y la intensidad. #}
   <fieldset class="intensidad">
     <legend class="rotulo">Cómo se pone el título</legend>
+    {# Se dice porque no se adivina: con el tamaño en el centro manda Portada
+       (elige el mayor que quepa en tres líneas), y en cuanto lo tocás mandás
+       vos y el texto se reparte en el bloque que dejen los otros dos. #}
+    <p class="pista">
+      Con el tamaño en el centro, Portada elige el mayor que quepa. En cuanto lo
+      movés, mandás vos: el ancho reparte las palabras y el alto dice hasta dónde
+      pueden crecer.
+    </p>
     <label class="deslizador">
       <span>Ancho del bloque</span>
       <input type="range" id="titulo-ancho" name="titulo_ancho"
              min="{{ ancho_titulo.min }}" max="{{ ancho_titulo.max }}"
              step="{{ ancho_titulo.paso }}" value="{{ titulo_ancho }}">
+    </label>
+    {# Son DOS mandos porque hacen dos cosas: el ancho decide dónde cortan las
+       líneas y el tamaño cuánto ocupa cada palabra. Con uno solo, ensanchar el
+       bloque no repartía el texto — el hueco se lo llevaba el auto-ajuste
+       subiendo el tamaño y el corte quedaba igual.
+       En el medio está el tamaño del template, que es lo que Portada hacía
+       hasta ahora. El rango sale del template, como el del ancho. #}
+    <label class="deslizador">
+      <span>Tamaño de la letra</span>
+      <input type="range" id="titulo-tamano" name="titulo_tamano"
+             min="{{ tamano_titulo.min }}" max="{{ tamano_titulo.max }}"
+             step="{{ tamano_titulo.paso }}" value="{{ titulo_tamano }}">
+    </label>
+    {# El tercero: hasta dónde puede crecer el título hacia arriba. El título no
+       se mueve —sigue apoyado donde dice el template— así que esto es cuántas
+       líneas entran antes de que el auto-ajuste tenga que achicar la letra, y
+       con cuántas palabras cabe «una palabra por línea». #}
+    <label class="deslizador">
+      <span>Alto del bloque</span>
+      <input type="range" id="titulo-alto" name="titulo_alto"
+             min="{{ alto_titulo.min }}" max="{{ alto_titulo.max }}"
+             step="{{ alto_titulo.paso }}" value="{{ titulo_alto }}">
     </label>
     <div class="fila">
       <label class="opcion">
@@ -98,8 +128,8 @@
 // Lo único que no puede hacer una navegación: repintar mientras se teclea.
 // Son ~200 ms de espera y ~35 ms de servidor, porque cambiar el título no
 // vuelve a componer la base -- ver COMPOSITION-22.
-// Los tres campos del título repintan igual: el ancho y el apilado cuestan lo
-// mismo que una errata, porque el título es overlay y no toca la base.
+// Todos los campos del título repintan igual: los tres sliders y el apilado
+// cuestan lo mismo que una errata, porque el título es overlay y no toca la base.
 //
 // Y el preview ES el aviso: pedir una palabra por línea con demasiadas palabras
 // vuelve al corte normal —nunca se pierde una palabra— y eso se ve aquí mismo,
@@ -109,9 +139,11 @@
   const imagen = document.getElementById("preview");
   if (!campo || !imagen) return;
   const ancho = document.getElementById("titulo-ancho");
+  const tamano = document.getElementById("titulo-tamano");
+  const alto = document.getElementById("titulo-alto");
   const apilado = document.getElementById("titulo-apilado");
-  // Se corta por el PRIMER campo del título: los tres van siempre al final y
-  // siempre los tres, así que lo de delante es el borrador y nada más.
+  // Se corta por el PRIMER campo del título: van siempre al final y siempre
+  // todos, así que lo de delante es el borrador y nada más.
   const base = imagen.src.split("&titulo_ancho=")[0];
   let pendiente;
   const repintar = () => {
@@ -119,12 +151,14 @@
     pendiente = setTimeout(() => {
       imagen.src = base +
         "&titulo_ancho=" + (ancho ? ancho.value : 0) +
+        "&titulo_tamano=" + (tamano ? tamano.value : 0) +
+        "&titulo_alto=" + (alto ? alto.value : 0) +
         "&titulo_apilado=" + (apilado && apilado.checked ? 1 : 0) +
         "&title=" + encodeURIComponent(campo.value);
       imagen.style.visibility = "visible";
     }, 200);
   };
-  for (const control of [campo, ancho, apilado]) {
+  for (const control of [campo, ancho, tamano, alto, apilado]) {
     if (control) control.addEventListener("input", repintar);
   }
 })();

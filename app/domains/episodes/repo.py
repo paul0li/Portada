@@ -18,10 +18,15 @@ class Episode:
     # foto de fondo". Se guarda por nombre, no por color: los colores viven en
     # el template y nadie mas los escribe.
     degradado: str
-    # Cuanto se ensancha el bloque del titulo respecto del template, y si el
-    # titulo va a una palabra por linea. Los dos son OVERLAY: cambiarlos cuesta
-    # lo mismo que corregir una errata, no una composicion entera.
+    # Como se puso el titulo: cuanto se ensancho su bloque, cuanto se movio el
+    # tamano de la letra, cuanto subio el techo del bloque, y si va a una palabra
+    # por linea. Todos son OVERLAY: cambiarlos cuesta lo mismo que corregir una
+    # errata, no una composicion entera. Y son tres numeros porque hacen tres
+    # cosas -- donde cortan las lineas, cuanto ocupa cada palabra, y cuantas
+    # lineas entran.
     titulo_ancho: int
+    titulo_tamano: int
+    titulo_alto: int
     titulo_apilado: bool
     created_at: str
     deleted_at: str | None
@@ -94,6 +99,8 @@ def insert(
     strength: str,
     degradado: str,
     titulo_ancho: int,
+    titulo_tamano: int,
+    titulo_alto: int,
     titulo_apilado: bool,
     selection: dict[str, list[str]],
     ajustes: dict[str, list[composition.Ajuste]] | None = None,
@@ -102,8 +109,9 @@ def insert(
     creado = utcnow()
     conn.execute(
         "INSERT INTO episodes_jobs "
-        "(id, user_id, title, strength, degradado, titulo_ancho, titulo_apilado, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(id, user_id, title, strength, degradado, titulo_ancho, titulo_tamano, "
+        "titulo_alto, titulo_apilado, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             episode_id,
             user_id,
@@ -111,6 +119,8 @@ def insert(
             strength,
             degradado,
             titulo_ancho,
+            titulo_tamano,
+            titulo_alto,
             int(titulo_apilado),
             creado,
         ),
@@ -152,6 +162,8 @@ def insert(
         strength=strength,
         degradado=degradado,
         titulo_ancho=titulo_ancho,
+        titulo_tamano=titulo_tamano,
+        titulo_alto=titulo_alto,
         titulo_apilado=titulo_apilado,
         created_at=creado,
         deleted_at=None,

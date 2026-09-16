@@ -14,7 +14,21 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
 
-TEMPLATE_VERSION = 9
+TEMPLATE_VERSION = 10
+# v10 (2026-09-16): el tamano de la letra del titulo deja de ser cosa unica del
+#   auto-ajuste. Con un solo mando -- el ancho del bloque -- ensanchar subia el
+#   tamano y el titulo se cortaba en las MISMAS lineas, solo que mas grande: el
+#   ancho se lo comia el auto-ajuste antes de llegar al corte. Ahora son dos
+#   decisiones: el bloque dice DONDE cortan las lineas y el tamano CUANTO ocupa
+#   cada palabra. Lo que el episodio elige es el TECHO del auto-ajuste, no el
+#   tamano final, asi que la regla de siempre sigue en pie: el tamano se ajusta
+#   al texto, no al reves, y ningun techo puede desbordar el bloque.
+#   Y con ellas entra la tercera: el TECHO DEL BLOQUE. `top` valia 150 por un
+#   logo que este show no usa, y era lo unico que decidia cuantas lineas entran
+#   -- o sea con cuantas palabras cabe "una palabra por linea". Ahora el rango
+#   se autora contra el marco, que es el mobiliario que el show si tiene.
+#   Con el techo en su sitio no cambia ni un pixel; sube igual porque el
+#   template decide algo nuevo, y ese numero mueve pixeles.
 # v9 (2026-09-02): el bloque del titulo deja de ser de un solo ancho. Termina en
 #   x=620 porque ahi empieza el invitado, y con eso las palabras se apilaban
 #   enseguida -- pero el titulo se dibuja ENCIMA de las figuras, asi que
@@ -256,10 +270,15 @@ SAFE_BOTTOM = 552
 class Typography:
     left: int = 48
     right: int = 620  # el bloque de titulo de SPEC 6: x 48 -> 620
-    # El techo del bloque. No es el borde del lienzo: el logo ocupa hasta y=130
-    # por la izquierda, que es justo por donde crece un titulo alineado abajo.
+    # El techo del bloque: hasta donde puede crecer un titulo alineado abajo.
     # Con tres lineas como maximo nunca se llegaba hasta aqui, asi que no hacia
     # falta decirlo. Apilando una palabra por linea, si.
+    #
+    # 150 es de cuando el show tenia logo, que ocupa hasta y=130 por la
+    # izquierda -- justo por donde crece el titulo. Sigue siendo el techo POR
+    # DEFECTO, pero ya no es el unico posible: el episodio lo mueve dentro de
+    # `alto_menos`/`alto_mas`, y ese rango se autora contra el MARCO, que es el
+    # mobiliario que el show usa de verdad.
     top: int = 150
     # SPEC 6 decia 604. Con marco, la banda con el nombre del show empieza en
     # y=552 y se comia el titulo entero. 500 deja la regla de acento en 522-531,
@@ -295,8 +314,69 @@ class Typography:
     # `ancho_mas` llega justo a x=980: el marco tiene 16px de borde y por la
     # derecha esta el conductor, que a partir de ahi ya no se ve.
     ancho_paso: int = 40
-    ancho_menos: int = 120
+    # Hasta 212px de bloque. Angostar tanto solo tiene sentido desde que el
+    # tamano es un mando: con el auto-ajuste al mando, un bloque estrecho no
+    # apila las palabras, las ACHICA hasta que entran -- que es lo contrario de
+    # lo que uno quiere al angostar. Con el tamano puesto, angostar es apilar.
+    ancho_menos: int = 360
     ancho_mas: int = 360
+
+    # Cuanto puede mover un episodio el techo del auto-ajuste, y de cuanto en
+    # cuanto. Es la otra mitad de "las letras tienen muy poco espacio": con el
+    # ancho solo, ensanchar el bloque no repartia el texto -- el auto-ajuste se
+    # comia el hueco subiendo el tamano, y el titulo se cortaba en las mismas
+    # lineas, solo que mas grande. Separados, el bloque dice DONDE cortan las
+    # lineas y el tamano CUANTO ocupa cada palabra, que es lo que decide cuantas
+    # caben en una.
+    #
+    # Sube TAMBIEN, y no por simetria: medido, `size_max` es lo unico que frena
+    # a un titulo corto. "NADIE LO VIO" sale a 104px en una linea de 99px dentro
+    # de un bloque de 350 -- 250px de alto sin usar, y nada fisico que lo impida.
+    # Solo en un titulo largo manda el bloque (cuatro lineas son 360px y no
+    # caben). Asi que hacia arriba SI hay algo que dar, en la mayoria de los
+    # titulos.
+    #
+    # `tamano_mas` llega a 200px. Con el auto-ajuste al mando no habria servido
+    # -- tres lineas a 152px ya son 428px y no entran en el bloque --, pero con
+    # el tamano puesto el titulo se reparte en las lineas que haga falta, asi
+    # que una palabra grande y sola es una miniatura posible y no un desborde.
+    #
+    # Lo que se elige sigue siendo el TECHO y no el tamano final: pedir 152 no
+    # impone 152, empieza a probar ahi. La regla 2 de `typography` queda intacta
+    # -- el tamano se ajusta al texto, no al reves -- y por eso este mando no
+    # puede desbordar el bloque por mucho que se suba.
+    #
+    # `tamano_paso` es 8 y no 2 como `size_step`: a los ~320px a los que se mira
+    # una miniatura, 2px de 104 son medio pixel. Un paso del mando tiene que
+    # verse donde se mira, igual que la regla de acento.
+    tamano_paso: int = 8
+    tamano_menos: int = 40  # 104 - 40 = 64 = `size_min`: por debajo no se lee
+    tamano_mas: int = 96  # 104 + 96 = 200
+
+    # Cuanto puede mover un episodio el TECHO del bloque, y de cuanto en cuanto.
+    # Es el tercer mando del titulo y hace lo tercero: el ancho dice donde
+    # cortan las lineas, el tamano cuanto ocupa cada palabra, y el alto CUANTAS
+    # lineas entran antes de que el auto-ajuste tenga que achicar. Es el que
+    # decide si "una palabra por linea" cabe con cinco palabras o con siete.
+    #
+    # El titulo NO se mueve: sigue apoyado en `bottom` y crece hacia arriba. Lo
+    # que se mueve es hasta donde puede crecer.
+    #
+    # `alto_mas` llega a y=10, o sea a lo alto del lienzo entero. Con el
+    # auto-ajuste al mando sobraba con y=50 -- el marco tiene 16px de borde y
+    # ahi arriba ya casi no hay miniatura --, pero con el tamano puesto el alto
+    # es lo que decide si angostar el bloque APILA las palabras o las achica: si
+    # el bloque no da, lo que cede es el tamano, y entonces el mando del ancho
+    # vuelve a parecer un mando de tamano. Que llegue arriba del todo es lo que
+    # deja apilar seis lineas grandes sin que nada ceda por detras.
+    #
+    # Pasarse del borde del marco es una decision de la semana, como invadir a
+    # una figura con el titulo: se ve en el preview mientras se elige. Y si el
+    # show usara logo, un titulo subido del todo se le pondria ENCIMA, porque el
+    # titulo se dibuja despues (`_draw_overlay`).
+    alto_paso: int = 20
+    alto_menos: int = 100  # el techo baja hasta y=250
+    alto_mas: int = 140  # y sube hasta y=10
 
     @property
     def block_width(self) -> int:
@@ -310,18 +390,47 @@ class Typography:
         """El ancho del bloque con el ensanche de este episodio."""
         return self.block_width + self.ensanche(extra)
 
-    def max_lineas(self, apilado: bool = False) -> int:
+    def cambio_de_tamano(self, extra: int) -> int:
+        """Cuanto se mueve el techo, dentro de los topes. Nunca lanza (SPEC 11.4)."""
+        return max(-self.tamano_menos, min(self.tamano_mas, extra))
+
+    def tamano(self, extra: int = 0) -> int:
+        """El techo del auto-ajuste con el cambio de este episodio.
+
+        Nunca por debajo de `size_min`: el suelo es una regla sobre como se LEE
+        un titulo en un feed, y bajar el techo no puede saltarsela.
+        """
+        return max(self.size_min, self.size_max + self.cambio_de_tamano(extra))
+
+    def cambio_de_alto(self, extra: int) -> int:
+        """Cuanto se mueve el techo, dentro de los topes. Nunca lanza (SPEC 11.4).
+
+        Positivo es MAS ALTO, como en `ensanche`: los mandos del titulo dicen
+        cuanto sitio hay, no hacia donde va la coordenada.
+        """
+        return max(-self.alto_menos, min(self.alto_mas, extra))
+
+    def techo(self, extra: int = 0) -> int:
+        """La `y` del techo del bloque con el alto que pidio este episodio.
+
+        Se RESTA porque en el lienzo arriba es menos: mas alto es un techo mas
+        arriba, o sea una `y` mas chica.
+        """
+        return self.top - self.cambio_de_alto(extra)
+
+    def max_lineas(self, apilado: bool = False, alto: int = 0) -> int:
         """Cuantas lineas se admiten.
 
-        Apilado son las que quepan de verdad entre `top` y `bottom` al tamano
+        Apilado son las que quepan de verdad entre el techo y `bottom` al tamano
         minimo, y no el tres de siempre: tres lineas es una regla sobre como se
         LEE un titulo en un feed, y una palabra por linea es otra forma de
-        leerlo. Lo que no cambia es el alto, que es fisico.
+        leerlo. Lo que no cambia es que el alto es fisico -- por eso subir el
+        techo deja entrar mas palabras apiladas, y bajarlo, menos.
         """
         if not apilado:
             return self.max_lines
         alto_linea = max(1, int(self.size_min * self.line_spacing))
-        return max(1, (self.bottom - self.top) // alto_linea)
+        return max(1, (self.bottom - self.techo(alto)) // alto_linea)
 
 
 TYPOGRAPHY = Typography()

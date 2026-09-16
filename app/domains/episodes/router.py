@@ -46,6 +46,8 @@ def _out(db, episode: repo.Episode) -> EpisodeOut:
         strength=episode.strength,
         degradado=episode.degradado,
         titulo_ancho=episode.titulo_ancho,
+        titulo_tamano=episode.titulo_tamano,
+        titulo_alto=episode.titulo_alto,
         titulo_apilado=episode.titulo_apilado,
         ajustes={
             role: [
@@ -73,6 +75,8 @@ def create_episode(body: CreateEpisode, db: Db, user_id: CurrentUser) -> Episode
         degradado=body.degradado,
         ajustes=body.normalized_ajustes(),
         titulo_ancho=body.titulo_ancho,
+        titulo_tamano=body.titulo_tamano,
+        titulo_alto=body.titulo_alto,
         titulo_apilado=body.titulo_apilado,
     )
     return _out(db, episode)
