@@ -660,10 +660,9 @@ a.opcion[aria-pressed="true"] {
 }
 
 /* `.boton` pone su propio `display`, y eso le gana al atributo `hidden`: sin
-   esto, «Guardar en Fotos» se vería sin JS, donde no hace nada. `.tarjeta`
-   igual, por «Mejorar con IA». */
-.boton[hidden],
-.tarjeta[hidden] {
+   esto, «Guardar en Fotos» se vería sin JS, donde no hace nada. Lo mismo
+   con «Mejorar en ChatGPT». */
+.boton[hidden] {
   display: none;
 }
 

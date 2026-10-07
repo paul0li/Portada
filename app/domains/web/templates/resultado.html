@@ -32,7 +32,7 @@
   <button class="boton" type="button" id="guardar-fotos" hidden
           data-src="/episodes/{{ episode.id }}/assembly/file"
           data-nombre="{{ episode.title or 'miniatura' }}">Guardar en Fotos</button>
-  <a class="boton secundario" href="{{ editar }}">Cambiar fotos</a>
+  <a class="boton secundario" href="{{ editar }}">Volver atrás</a>
 </div>
 {# Donde no hay hoja de compartir —Portada por HTTP en la LAN no es un contexto
    seguro, y Safari no la ofrece ahí— el botón enseña esto en vez de no hacer
@@ -40,26 +40,16 @@
 <p class="aviso" id="guardar-pista" role="status" hidden>
   Mantén presionada la imagen de arriba y toca «Agregar a Fotos».
 </p>
+{# La pasada de IA, por fuera de Portada (WEB-49): el PNG final va a ChatGPT
+   por la hoja de compartir, con la instrucción. Nace oculto y lo muestra el
+   script, porque sin JS no haría nada. #}
+<button class="boton" type="button" id="mejorar-chatgpt" hidden
+        data-src="/episodes/{{ episode.id }}/assembly/file"
+        data-instruccion="Mejora esta miniatura de YouTube.">Mejorar en ChatGPT</button>
+<p class="aviso" id="mejorar-pista" role="status" hidden></p>
 <p class="descarga">
   <a href="/episodes/{{ episode.id }}/assembly/file" download>Descargar el PNG</a>
 </p>
-
-{# La pasada de IA, por fuera de Portada (WEB-49): el PNG final va a ChatGPT
-   por la hoja de compartir, con la instrucción. El subtítulo no tiene `name`:
-   es texto para ChatGPT, nunca para el armado (WEB-18). Nace oculta y la
-   muestra el script, porque sin JS no haría nada. #}
-<div class="tarjeta" id="mejorar" hidden>
-  <p class="rotulo">Mejorar con IA</p>
-  <label>
-    <span class="rotulo">Subtítulo (opcional)</span>
-    <input type="text" id="subtitulo-chatgpt" autocomplete="off"
-           placeholder="Lo que dirá el subtítulo">
-  </label>
-  <button class="boton" type="button" id="mejorar-chatgpt"
-          data-src="/episodes/{{ episode.id }}/assembly/file"
-          data-instruccion="Mejora esta miniatura de YouTube.">Mejorar en ChatGPT</button>
-  <p class="aviso" id="mejorar-pista" role="status" hidden></p>
-</div>
 
 <div class="tarjeta">
   <p class="rotulo">Se usó</p>

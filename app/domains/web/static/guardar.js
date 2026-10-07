@@ -70,16 +70,8 @@
   // la imagen.
 
   if (mejorar) {
-    const tarjeta = document.getElementById("mejorar");
-    const subtitulo = document.getElementById("subtitulo-chatgpt");
     const pista = document.getElementById("mejorar-pista");
-    tarjeta.hidden = false;
-
-    const instruccion = () => {
-      const texto = subtitulo.value.trim();
-      const base = mejorar.dataset.instruccion;
-      return texto ? `${base} Agrega un subtítulo que diga: «${texto}».` : base;
-    };
+    mejorar.hidden = false;
 
     // `execCommand` como red: `navigator.clipboard` también pide contexto seguro.
     const copiar = (texto) => {
@@ -118,7 +110,7 @@
     };
 
     mejorar.addEventListener("click", async () => {
-      const texto = instruccion();
+      const texto = mejorar.dataset.instruccion;
       // Las dos cosas dentro del mismo toque, sin esperar entre ellas: Safari
       // solo deja abrir la hoja como respuesta directa a un toque.
       copiar(texto);

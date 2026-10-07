@@ -1333,9 +1333,11 @@ def test_web_49_mejoro_la_miniatura_en_chatgpt(client, imagen):
     assert f'data-src="/episodes/{episode_id}/assembly/file"' in boton.group(0)
     assert 'data-instruccion="Mejora esta miniatura de YouTube."' in boton.group(0)
 
-    subtitulo = re.search(r'<input[^>]*id="subtitulo-chatgpt"[^>]*>', pagina)
-    assert subtitulo, "no hay dónde escribir el subtítulo"
-    assert "name=" not in subtitulo.group(0), "el subtítulo no debe viajar a Portada"
+    # Debajo de «Guardar en Fotos» y «Volver atrás», que van lado a lado.
+    acciones = pagina.index('id="guardar-fotos"')
+    assert pagina.index("Volver atrás") > acciones
+    assert pagina.index('id="mejorar-chatgpt"') > pagina.index("Volver atrás")
+    assert "Cambiar fotos" not in pagina
 
     # `?q=` envía el mensaje al instante, sin la imagen.
     assert "chatgpt.com/?q=" not in pagina
