@@ -242,3 +242,57 @@ def test_identity_23_abrir_el_enlace_no_inicia_sesion_por_si_solo(client, mailer
     assert client.get("/auth/me").status_code == 401, "un GET inicio sesion"
     # Y el token sigue sirviendo: abrirlo no lo gasto.
     assert client.post("/auth/verify", json={"token": _token(mailer)}).status_code == 200
+
+
+# --- acceso por la red de Tailscale --------------------------------------
+
+
+def test_identity_24_desde_tailscale_se_entra_sin_cookie(tailnet, db):
+    respuesta = tailnet.get("/auth/me")
+
+    assert respuesta.status_code == 200, "desde Tailscale hubo que iniciar sesion"
+    assert respuesta.json()["email"] == "equipo@ejemplo.cl"
+    assert COOKIE not in tailnet.cookies, "entrar por tailnet no deberia crear una sesion"
+
+
+@pytest.mark.parametrize("ip", ["192.168.100.40", "10.0.0.7", "8.8.8.8"])
+def test_identity_25_fuera_de_tailscale_no_se_entra(tailnet_app, ip):
+    """El servidor puede estar escuchando en la red local: alguien en el mismo
+    wifi llega sin pasar por Tailscale, y sin login nada lo pararia."""
+    from fastapi.testclient import TestClient
+
+    with TestClient(tailnet_app, client=(ip, 50000)) as cliente:
+        assert cliente.get("/auth/me").status_code == 403
+        assert cliente.get("/", follow_redirects=False).status_code == 403
+
+
+def test_identity_25_el_propio_equipo_si_entra(tailnet_app):
+    from fastapi.testclient import TestClient
+
+    with TestClient(tailnet_app, client=("127.0.0.1", 50000)) as cliente:
+        assert cliente.get("/auth/me").status_code == 200
+
+
+def test_identity_25_con_magic_link_la_ip_no_importa(client):
+    """La guarda es del acceso por tailnet: con login, la puerta es la cookie."""
+    assert client.get("/entrar").status_code == 200
+
+
+def test_identity_26_el_usuario_se_crea_al_primer_acceso(tailnet, db):
+    with db.connection() as conn:
+        antes = conn.execute("SELECT COUNT(*) FROM identity_users").fetchone()[0]
+
+    tailnet.get("/auth/me")
+    tailnet.get("/auth/me")
+
+    with db.connection() as conn:
+        filas = conn.execute("SELECT email FROM identity_users").fetchall()
+    assert antes == 0
+    assert [f[0] for f in filas] == ["equipo@ejemplo.cl"], "se esperaba un solo usuario"
+
+
+def test_identity_27_por_tailnet_no_se_manda_ningun_enlace(tailnet, mailer):
+    respuesta = tailnet.post("/auth/magic-link", json={"email": EMAIL})
+
+    assert respuesta.status_code == 404
+    assert not mailer.sent, "se mando un correo con el acceso por tailnet"

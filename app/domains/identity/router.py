@@ -6,7 +6,9 @@ El unico lugar del sistema que sabe que existe una cookie llamada
 
 from fastapi import APIRouter, Request, Response, status
 
+from app.core.auth import OptionalUser
 from app.core.deps import Config, Db
+from app.core.errors import NotFound
 from app.core.logging import user_id_var
 from app.core.middleware import client_ip
 from app.domains.identity import errors, service
@@ -38,6 +40,9 @@ def set_session_cookie(response: Response, request: Request, token: str) -> None
 
 @router.post("/magic-link", status_code=status.HTTP_202_ACCEPTED)
 def request_magic_link(body: MagicLinkRequest, request: Request, db: Db, settings: Config) -> dict:
+    if settings.acceso == "tailnet":
+        # No hay enlace que pedir: se entra por la red de Tailscale (IDENTITY-27).
+        raise NotFound("Esta instancia no usa enlaces para entrar.", code="IDENTITY_SIN_ENLACE")
     service.request_magic_link(
         db,
         settings,
@@ -62,8 +67,9 @@ def verify(
 
 
 @router.get("/me")
-def me(request: Request, db: Db) -> UserOut:
-    user_id = service.authenticate(db, request.cookies.get(COOKIE_NAME))
+def me(db: Db, user_id: OptionalUser) -> UserOut:
+    # Por el autenticador montado y no por la cookie: con acceso por tailnet no
+    # hay cookie, y `/auth/me` tiene que decir lo mismo que el resto de la app.
     if user_id is None:
         raise errors.SinSesion("Necesitas iniciar sesión.")
     user = service.load_user(db, user_id)

@@ -40,3 +40,15 @@ los demás solo ven un `UserId`.
 
 - **IDENTITY-22** — el enlace del correo se puede abrir: apunta a una página que responde a `GET`, no a un endpoint que solo acepta `POST`.
 - **IDENTITY-23** — abrir el enlace no inicia sesión por sí solo: canjear el token sigue siendo un `POST`, para que ningún `GET` cambie estado y un escáner de enlaces no queme el token.
+
+## Acceso por la red de Tailscale
+
+Con `PORTADA_ACCESO=tailnet` no hay pantalla de entrar: quien llega por la red de
+Tailscale ya pasó por la puerta de Tailscale, y entra como el usuario de la
+instancia (`PORTADA_ACCESO_COMO`). La puerta de la app pasa a ser de dónde viene
+la petición, no qué cookie trae.
+
+- **IDENTITY-24** — con el acceso por tailnet, una petición desde una IP de Tailscale entra como el usuario configurado, sin cookie ni enlace.
+- **IDENTITY-25** — con el acceso por tailnet, una petición que no viene de Tailscale ni del propio equipo recibe 403: escuchar en la red local no abre la app a quien esté en el mismo wifi.
+- **IDENTITY-26** — si el usuario configurado no existe todavía, se crea al primer acceso: una instancia nueva arranca sin pasos.
+- **IDENTITY-27** — con el acceso por tailnet no se manda ningún enlace: pedirlo responde 404.

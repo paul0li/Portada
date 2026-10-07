@@ -65,7 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Se cuelgan en app.state en vez de importarse: es lo que permite que ningun
     # dominio dependa de identity ni del backend de correo (ver core/auth.py).
-    app.state.authenticator = identity_api.make_authenticator(app.state.db)
+    app.state.authenticator = identity_api.make_authenticator(app.state.db, settings)
     app.state.mailer = identity_email.build_sender(settings)
     app.state.cutout_provider = processing_api.build_provider(settings.cutout_provider)
     app.state.finisher = finishing_api.build_finisher(settings.finisher)

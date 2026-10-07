@@ -24,6 +24,9 @@ from app.domains.identity.email import Message
 @pytest.fixture
 def settings(tmp_path) -> Settings:
     return Settings(
+        # Sin el `.env` de la maquina: con `PORTADA_CUTOUT_PROVIDER=rembg` o
+        # `PORTADA_ACCESO=tailnet` puestos ahi, los tests probaban otra app.
+        _env_file=None,
         env="test",
         # DEBUG y no WARNING a proposito: con el nivel alto, `log.info(...)` ni
         # siquiera construye el LogRecord, y un `extra` invalido pasa inadvertido
@@ -161,3 +164,27 @@ def imagen():
         return buffer
 
     return build
+
+
+# Una IP del rango de Tailscale (100.64.0.0/10): es de donde llega todo cuando
+# `tailscale serve` hace de puerta.
+IP_TAILNET = ("100.101.102.103", 50000)
+EMAIL_TAILNET = "equipo@ejemplo.cl"
+
+
+@pytest.fixture
+def tailnet_app(settings: Settings, mailer: RecordingSender):
+    """Una instancia con `acceso=tailnet`: sin pantalla de entrar."""
+    from app.main import create_app
+
+    abierta = settings.model_copy(update={"acceso": "tailnet", "acceso_como": EMAIL_TAILNET})
+    application = create_app(abierta)
+    application.state.mailer = mailer
+    return application
+
+
+@pytest.fixture
+def tailnet(tailnet_app) -> TestClient:
+    """Un cliente que llega desde la red de Tailscale, sin cookie."""
+    with TestClient(tailnet_app, client=IP_TAILNET) as test_client:
+        yield test_client

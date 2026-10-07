@@ -7,11 +7,12 @@ la historia de observabilidad del MVP: el usuario reporta un id, y un grep
 devuelve la traza completa.
 """
 
+import ipaddress
 import time
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp
 
 from app.core.ids import new_id
@@ -38,7 +39,10 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         started = time.perf_counter()
         status = 500
         try:
-            response = await call_next(request)
+            if not _puede_entrar(request):
+                response = PlainTextResponse("Portada solo se abre por Tailscale.", status_code=403)
+            else:
+                response = await call_next(request)
             status = response.status_code
             response.headers[REQUEST_ID_HEADER] = request_id
             return response
@@ -57,6 +61,35 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 )
             request_id_var.reset(token_rid)
             user_id_var.reset(token_uid)
+
+
+# De donde llega una peticion que paso por Tailscale: su rango CGNAT, su rango
+# IPv6, y el propio equipo (por donde entra `tailscale serve` en algunos sistemas).
+_TAILNET = (
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("fd7a:115c:a1e0::/48"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+)
+
+
+def _puede_entrar(request: Request) -> bool:
+    """Con `acceso=tailnet` no hay login: la puerta es de donde viene la peticion.
+
+    Se mira la direccion del socket y NUNCA `X-Forwarded-For`: sin login, una
+    cabecera que cualquiera escribe seria la llave de la casa. Y la guarda
+    existe porque uvicorn puede estar escuchando en la red local: sin ella,
+    cualquiera en el mismo wifi entraria como el usuario de la instancia.
+    """
+    settings = getattr(request.app.state, "settings", None)
+    if settings is None or settings.acceso != "tailnet":
+        return True
+    host = request.client.host if request.client else ""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(ip in red for red in _TAILNET)
 
 
 def client_ip(request: Request) -> str:

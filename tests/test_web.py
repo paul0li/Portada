@@ -1307,3 +1307,42 @@ def test_web_36_sin_recorte_activo_el_modal_lo_dice(client, imagen, app):
 
     assert "/fondo" not in modal, "ofrece un botón que no puede hacer nada"
     assert "no está activo" in modal, "no dice por qué no está el botón"
+
+
+def test_web_48_por_tailnet_se_entra_directo_al_inicio(tailnet):
+    inicio = tailnet.get("/", follow_redirects=False)
+    assert inicio.status_code == 200, "por tailnet no deberia haber pantalla de entrar"
+    assert 'action="/salir"' not in inicio.text, "no hay sesion que cerrar"
+
+    entrar = tailnet.get("/entrar", follow_redirects=False)
+    assert entrar.status_code == 303
+    assert entrar.headers["location"] == "/"
+
+    assert tailnet.get("/libreria").status_code == 200
+
+
+def test_web_49_mejoro_la_miniatura_en_chatgpt(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    creado = _armar(client, {"conductor": ids["conductor"]})
+    pagina = client.get(creado.headers["location"]).text
+    episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+
+    boton = re.search(r'<button[^>]*id="mejorar-chatgpt"[^>]*>', pagina)
+    assert boton, "no hay botón para mejorar en ChatGPT"
+    assert f'data-src="/episodes/{episode_id}/assembly/file"' in boton.group(0)
+    assert 'data-instruccion="Mejora esta miniatura de YouTube."' in boton.group(0)
+
+    # Debajo de «Guardar en Fotos» y «Volver atrás», que van lado a lado.
+    acciones = pagina.index('id="guardar-fotos"')
+    assert pagina.index("Volver atrás") > acciones
+    assert pagina.index('id="mejorar-chatgpt"') > pagina.index("Volver atrás")
+    assert "Cambiar fotos" not in pagina
+
+    # `?q=` envía el mensaje al instante, sin la imagen.
+    assert "chatgpt.com/?q=" not in pagina
+
+    script = client.get("/estatico/guardar.js").text
+    assert "mejorar-chatgpt" in script
+    assert "clipboard" in script, "la instrucción tiene que quedar copiada"
+    assert "chatgpt.com/?q=" not in script
