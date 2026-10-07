@@ -119,7 +119,7 @@ misma librería.
 Primero, `make estado`. Dice cuál de las tres piezas falta:
 
 ```
-servidor   200                                  ← uvicorn responde
+servidor   arriba                               ← uvicorn responde
 tailscale  100.x.x.x  macbook-pro-2  …  macOS   ← Tailscale conectado
 serve
   https://macbook-pro-2.….ts.net (tailnet only)
@@ -128,7 +128,7 @@ serve
 
 | Síntoma | Qué pasa | Cómo se arregla |
 | --- | --- | --- |
-| `servidor  no responde` | El proceso murió, o el Mac se reinició | `make serve` |
+| `servidor  no responde` | El proceso murió, o el Mac se reinició | Con el agente de `launchd` (abajo) vuelve solo en segundos; si no, mirar `data/servidor.log`. Sin agente: `make serve` |
 | `make serve` dice *address already in use* | Quedó otro proceso en el 8000 | `lsof -iTCP:8000 -sTCP:LISTEN` para ver cuál, `kill <PID>`, y otra vez `make serve` |
 | `tailscale` dice *stopped* o *Logged out* | La app de Tailscale está cerrada o cerró la sesión | Abrir Tailscale en el Mac (`open -a Tailscale`) y entrar |
 | `serve` vacío o *No serve config* | Se borró la configuración del `serve` | `tailscale serve --bg 8000` |
@@ -153,7 +153,7 @@ cat > ~/Library/LaunchAgents/com.portada.servidor.plist <<PLIST
   <key>Label</key><string>com.portada.servidor</string>
   <key>WorkingDirectory</key><string>$(pwd)</string>
   <key>ProgramArguments</key><array>
-    <string>$(which uv)</string><string>run</string><string>uvicorn</string>
+    <string>$(whence -p uv)</string><string>run</string><string>uvicorn</string>
     <string>app.main:app</string><string>--host</string><string>127.0.0.1</string>
     <string>--port</string><string>8000</string>
   </array>
@@ -166,7 +166,11 @@ PLIST
 launchctl load ~/Library/LaunchAgents/com.portada.servidor.plist
 ```
 
+`whence -p` y no `which`: si `uv` es un alias en tu shell, `which` devuelve el
+texto del alias y `launchd` falla sin dejar log (`launchctl list` muestra un 78).
 Con el agente puesto, `make serve` sobra: el 8000 ya está ocupado.
+
+- Comprobar que está corriendo: `launchctl list | grep portada` (la primera columna es el PID; un `-` con un número al lado es el código con que murió)
 
 - Reiniciarlo después de un cambio de código: `launchctl kickstart -k gui/$(id -u)/com.portada.servidor`
 - Quitarlo: `launchctl unload ~/Library/LaunchAgents/com.portada.servidor.plist`

@@ -24,7 +24,7 @@ serve:
 
 # Que parte se cayo, en un paso: el servidor, Tailscale o el `serve`.
 estado:
-	@printf "servidor   "; curl -s -o /dev/null -w "%{http_code}\n" --max-time 3 http://127.0.0.1:8000/health || echo "no responde"
+	@printf "servidor   "; curl -sf -o /dev/null --max-time 3 http://127.0.0.1:8000/health && echo "arriba" || echo "no responde"
 	@printf "tailscale  "; tailscale status --self --peers=false 2>&1 | head -1
 	@echo "serve"; tailscale serve status 2>&1 | sed 's/^/  /'
 
