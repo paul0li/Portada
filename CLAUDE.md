@@ -9,7 +9,7 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 El preview de cada paso es un lienzo: se toca una figura, se arrastra, se escala
 desde su asa o pellizcando, se voltea y se cambia de capa, y al soltar lo que se
 ve es lo que se descarga. Libre dentro del lienzo: lo único que se acota es que
-el centro de una figura no salga del cuadro. **231 tests.**
+el centro de una figura no salga del cuadro. **232 tests.**
 
 Lo que lo hace honesto es que el navegador **apila; no compone**. El servidor
 sirve las capas del armado (fondo, cada figura, logo, título, marco) con su

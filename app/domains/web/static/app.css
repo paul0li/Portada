@@ -659,6 +659,27 @@ a.opcion[aria-pressed="true"] {
   flex: 1;
 }
 
+/* `.boton` pone su propio `display`, y eso le gana al atributo `hidden`: sin
+   esto, «Guardar en Fotos» se vería sin JS, donde no hace nada. */
+.boton[hidden] {
+  display: none;
+}
+
+/* La imagen que hay que mantener presionada, cuando no hay hoja de compartir. */
+.miniatura-final.resaltada {
+  outline: 3px solid var(--acento);
+  outline-offset: 3px;
+}
+
+.descarga {
+  text-align: center;
+  font-size: 13px;
+}
+
+.descarga a {
+  color: var(--tinta-media);
+}
+
 /* El título ya está EN la miniatura, a tamaño de titular. Repetirlo debajo como
    encabezado es gritar dos veces; aquí solo sirve para saber qué episodio es. */
 .titulo-episodio {
@@ -806,6 +827,17 @@ a.opcion[aria-pressed="true"] {
   font: inherit;
   font-size: 13px;
   color: inherit;
+}
+
+/* Los botones de la barra son íconos: cuadrados y del ancho de un dedo. */
+.herramientas .opcion.icono {
+  flex: 0 0 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.herramientas .opcion.icono svg {
+  display: block;
 }
 
 .herramientas .opcion[aria-pressed="true"] {

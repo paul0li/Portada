@@ -707,6 +707,32 @@ def test_web_46_quito_el_fondo_desde_el_lienzo(client, imagen, app):
     devuelta = _capas()["conductor.0"]
     assert devuelta["recorte"]["puesto"] is False and devuelta["src"] == conductor["src"]
 
+    # Y la barra del lienzo trae el botón, que llama a esos mismos endpoints.
+    script = client.get("/estatico/lienzo.js").text
+    assert "Quitarle el fondo" in script and "/fondo" in script and "recorte.admite" in script
+
+
+def test_web_47_guardo_la_miniatura_en_fotos(client, imagen):
+    """En iPhone, un enlace de descarga manda a Archivos; la hoja de compartir
+    manda a Fotos. Sin hoja de compartir (HTTP), mantener presionada la imagen."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    creado = _armar(client, {"conductor": ids["conductor"]})
+    pagina = client.get(creado.headers["location"]).text
+    episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+    archivo = f"/episodes/{episode_id}/assembly/file"
+
+    boton = re.search(r'<button[^>]*id="guardar-fotos"[^>]*>', pagina)
+    assert boton, "no hay botón para guardar en Fotos"
+    assert f'data-src="{archivo}"' in boton.group(0)
+    # Lo que se guarda manteniendo presionado es el PNG de verdad, no el preview.
+    assert re.search(rf'<img[^>]*class="miniatura-final"[^>]*src="{archivo}"', pagina)
+    assert "Agregar a Fotos" in pagina, "no dice qué hacer donde no hay hoja de compartir"
+    # Sin JS, la descarga sigue ahí.
+    assert f'href="{archivo}" download' in pagina
+    script = client.get("/estatico/guardar.js").text
+    assert "navigator.share" in script and "canShare" in script
+
 
 def test_web_42_pongo_el_titulo_ancho_o_apilado(client, imagen):
     """Los tres mandos del título viajan con el formulario y llegan al armado.

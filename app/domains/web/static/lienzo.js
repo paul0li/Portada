@@ -220,14 +220,54 @@
 
   // --- la barra de la figura elegida ---------------------------------------
 
-  const boton = (etiqueta, accion, { puesto = null, apagado = false } = {}) => {
+  // Los íconos de siempre, en SVG en línea y en el color del texto. Cada botón
+  // dice además con palabras qué hace (`aria-label` y `title`): un ícono solo
+  // se adivina, y «Atrás» y «Adelante» se parecen mucho entre sí.
+  const trazo = (cuerpo) =>
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    cuerpo +
+    "</svg>";
+  const ICONOS = {
+    // Dos triángulos a cada lado de un eje: el de la izquierda lleno, su
+    // reflejo vacío. Vertical para el espejo, horizontal para boca abajo.
+    espejo: trazo(
+      '<path d="M12 3v18" stroke-dasharray="2 2.5"/>' +
+        '<path d="M9 6v13H3z" fill="currentColor"/><path d="M15 6v13h6z"/>',
+    ),
+    bocaAbajo: trazo(
+      '<path d="M3 12h18" stroke-dasharray="2 2.5"/>' +
+        '<path d="M6 9h13V3z" fill="currentColor"/><path d="M6 15h13v6z"/>',
+    ),
+    // Dos cuadrados solapados; el que va a moverse es el lleno.
+    atras: trazo(
+      '<rect x="9" y="3" width="12" height="12" rx="2" fill="currentColor"/>' +
+        '<rect x="3" y="9" width="12" height="12" rx="2" style="fill: var(--tarjeta)"/>',
+    ),
+    adelante: trazo(
+      '<rect x="9" y="3" width="12" height="12" rx="2"/>' +
+        '<rect x="3" y="9" width="12" height="12" rx="2" fill="currentColor"/>',
+    ),
+    restablecer: trazo('<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/>'),
+    // Una persona con un destello: «sacarle el fondo» sin escribirlo.
+    quitarFondo: trazo(
+      '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 21a6.5 6.5 0 0 1 13 0"/>' +
+        '<path d="M19 2.5v5M16.5 5h5"/>',
+    ),
+    espera: trazo('<path d="M12 3a9 9 0 1 0 9 9"><animateTransform attributeName="transform" ' +
+      'type="rotate" from="0 12 12" to="360 12 12" dur="0.9s" repeatCount="indefinite"/></path>'),
+  };
+
+  const boton = (icono, nombre, accion, { puesto = null, apagado = false } = {}) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "opcion";
-    b.textContent = etiqueta;
+    b.className = "opcion icono";
+    b.innerHTML = ICONOS[icono];
+    b.setAttribute("aria-label", nombre);
+    b.title = nombre;
     if (puesto !== null) b.setAttribute("aria-pressed", puesto ? "true" : "false");
     b.disabled = apagado;
-    b.addEventListener("click", accion);
+    b.addEventListener("click", () => accion(b));
     return b;
   };
 
@@ -241,53 +281,97 @@
 
     if (capa.nombre === "titulo") {
       rotulo.textContent = `Título · ${capa.tamano} px` + (capa.mandos.tamano ? "" : " (auto)");
-      // «Como estaba» repone todo lo del lienzo: el sitio y los tres mandos.
+      // «Restablecer» repone todo lo del lienzo: el sitio y los tres mandos.
       const m = capa.mandos;
       const tocado = estado.titulo.x || estado.titulo.y || m.ancho || m.tamano || m.alto;
       const reponerTitulo = () => {
         for (const el of Object.values(deslizadores)) if (el) el.value = 0;
         moverTitulo(0, 0);
       };
-      fila.append(boton("Como estaba", reponerTitulo, { apagado: !tocado }));
+      fila.append(boton("restablecer", "Restablecer", reponerTitulo, { apagado: !tocado }));
     } else if (capa.ancla) {
       const a = capa.ajuste;
       rotulo.textContent = `${capa.etiqueta} · ${a.escala}%`;
+      // Quitar el fondo solo donde hace algo (WEB-46): si el rol no admite
+      // recorte o el proveedor no quita fondos, el botón no está.
+      if (capa.recorte && capa.recorte.admite) {
+        const puesto = capa.recorte.puesto;
+        fila.append(
+          boton(
+            "quitarFondo",
+            puesto ? "Devolverle el fondo" : "Quitarle el fondo",
+            (b) => recortar(capa, b),
+            { puesto },
+          ),
+        );
+      }
       if (capa.voltea) {
         fila.append(
-          boton("Espejo", () => cambiar(capa, { voltear_x: !a.voltear_x }, "scaleX(-1)"), {
-            puesto: a.voltear_x,
-          }),
-          boton("Boca abajo", () => cambiar(capa, { voltear_y: !a.voltear_y }, "scaleY(-1)"), {
-            puesto: a.voltear_y,
-          }),
+          boton(
+            "espejo",
+            "Espejo horizontal",
+            () => cambiar(capa, { voltear_x: !a.voltear_x }, "scaleX(-1)"),
+            { puesto: a.voltear_x },
+          ),
+          boton(
+            "bocaAbajo",
+            "Espejo vertical",
+            () => cambiar(capa, { voltear_y: !a.voltear_y }, "scaleY(-1)"),
+            { puesto: a.voltear_y },
+          ),
         );
       }
       if (capa.mueve) {
         fila.append(
-          boton("Atrás", () => cambiar(capa, { capa: a.capa - 1 }), {
+          boton("atras", "Enviar atrás", () => cambiar(capa, { capa: a.capa - 1 }), {
             apagado: a.capa <= capa.capas[0],
           }),
-          boton("Adelante", () => cambiar(capa, { capa: a.capa + 1 }), {
+          boton("adelante", "Traer adelante", () => cambiar(capa, { capa: a.capa + 1 }), {
             apagado: a.capa >= capa.capas[1],
           }),
         );
       }
       const tocada =
         a.dx || a.dy || a.capa || a.voltear_x || a.voltear_y || a.escala !== 100;
-      fila.append(boton("Como estaba", () => reponer(capa), { apagado: !tocada }));
+      fila.append(boton("restablecer", "Restablecer", () => reponer(capa), { apagado: !tocada }));
     } else if (capa.nombre === "fondo") {
       const a = capa.ajuste || { voltear_x: false, voltear_y: false };
       rotulo.textContent = "Fondo";
       fila.append(
-        boton("Espejo", () => voltearFondo({ ...a, voltear_x: !a.voltear_x }), {
+        boton("espejo", "Espejo horizontal", () => voltearFondo({ ...a, voltear_x: !a.voltear_x }), {
           puesto: a.voltear_x,
         }),
-        boton("Boca abajo", () => voltearFondo({ ...a, voltear_y: !a.voltear_y }), {
+        boton("bocaAbajo", "Espejo vertical", () => voltearFondo({ ...a, voltear_y: !a.voltear_y }), {
           puesto: a.voltear_y,
         }),
       );
     }
     barra.append(rotulo, fila);
+  };
+
+  // Quitar o devolver el fondo: los mismos endpoints que el modal de la foto.
+  // Recortar tarda ~0,5 s (el primero del proceso, ~3 s), así que el botón
+  // dice que está trabajando en vez de parecer que no hizo nada.
+  const recortar = async (capa, b) => {
+    const ruta = `/libreria/fotos/${capa.foto}/fondo` + (capa.recorte.puesto ? "/deshacer" : "");
+    b.disabled = true;
+    b.setAttribute("aria-busy", "true");
+    b.innerHTML = ICONOS.espera;
+    const datos = new FormData();
+    datos.append("volver", location.pathname + location.search);
+    try {
+      // `manual`: el endpoint contesta con una redirección para el formulario
+      // del modal; aquí no hace falta seguirla, solo saber que salió bien.
+      await fetch(ruta, {
+        method: "POST",
+        body: datos,
+        credentials: "same-origin",
+        redirect: "manual",
+      });
+    } catch {
+      // Si falló, el lienzo que vuelve lo dice: el botón sigue como estaba.
+    }
+    pedir(ajustes);
   };
 
   // --- pedir un ajuste -----------------------------------------------------
