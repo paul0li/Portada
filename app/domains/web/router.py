@@ -14,6 +14,8 @@ Tres cosas, y solo tres, separan a este router del de la API:
 3. **Después de un POST se redirige.** Recargar no vuelve a subir la foto.
 """
 
+import hashlib
+import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated
@@ -36,6 +38,22 @@ PLANTILLAS = Path(__file__).parent / "templates"
 ESTATICOS = Path(__file__).parent / "static"
 
 TEMPLATES = Jinja2Templates(directory=str(PLANTILLAS))
+
+
+def _estatico(nombre: str) -> str:
+    """La URL de un estático con la huella de su contenido.
+
+    Sin huella, un navegador que ya tenía `app.css` se queda con la vieja al
+    actualizar Portada: pasó al hacer el lienzo, con el CSS nuevo en disco y el
+    de antes en pantalla. Con la huella, cambiar el archivo es cambiar la URL.
+    Se lee en cada página y no al arrancar, para que `make dev --reload` no
+    sirva una huella vieja; son tres archivos pequeños.
+    """
+    contenido = (ESTATICOS / nombre).read_bytes()
+    return f"/estatico/{nombre}?v={hashlib.sha256(contenido).hexdigest()[:10]}"
+
+
+TEMPLATES.env.globals["estatico"] = _estatico
 
 # Ninguna pantalla privada se guarda en ninguna caché: lo que hay dentro es de
 # una sola persona, y el botón «atrás» no debería enseñárselo a la siguiente.
@@ -260,15 +278,24 @@ class Borrador:
         """Los campos de la URL: una foto por par, más uno por figura ajustada."""
         fotos = [(role, pid) for role, ids in self.seleccion.items() for pid in ids]
         ajustados = [
-            (
-                "ajuste",
-                f"{role}.{posicion}:{a.dx},{a.dy},{a.capa},{int(a.voltear_x)},{int(a.voltear_y)}",
-            )
+            ("ajuste", _texto_del_ajuste(role, posicion, a))
             for role, figuras in sorted(self.ajustes.items())
             for posicion, a in enumerate(figuras)
             if a != episodes.SIN_AJUSTE
         ]
         return [*fotos, *ajustados]
+
+
+def _texto_del_ajuste(role: str, posicion: int, a: episodes.Ajuste) -> str:
+    """`invitado.1:dx,dy,capa,voltear_x,voltear_y,escala`.
+
+    `_lee_ajustes` es su lectura. La isla de JS del lienzo lo escribe solo para
+    PEDIR un ajuste: lo que copia a la barra de direcciones es lo que vuelve en
+    `lienzo.json`, ya acotado por el servidor.
+    """
+    return (
+        f"{role}.{posicion}:{a.dx},{a.dy},{a.capa},{int(a.voltear_x)},{int(a.voltear_y)},{a.escala}"
+    )
 
 
 def _seleccion(params) -> dict[str, list[str]]:
@@ -281,12 +308,16 @@ def _seleccion(params) -> dict[str, list[str]]:
     return elegido
 
 
-def _lee_ajustes(valores) -> dict[str, episodes.Ajuste]:
-    """`ajuste=invitado.1:40,-20,1,0,1`, uno por figura ajustada.
+# Los campos de un ajuste en la URL, con lo que vale cada uno si no viene.
+POR_DEFECTO = ("0", "0", "0", "0", "0", "100")
 
-    Antes del punto va el rol y después la figura dentro de ese rol; los dos
-    últimos números son los volteos. Se aceptan las dos formas viejas —sin
-    posición, y con tres números— para que un enlace que alguien tenía abierto
+
+def _lee_ajustes(valores) -> dict[str, episodes.Ajuste]:
+    """`ajuste=invitado.1:40,-20,1,0,1,120`, uno por figura ajustada.
+
+    Antes del punto va el rol y después la figura dentro de ese rol; después
+    vienen los volteos y la escala. Se aceptan las formas viejas —sin posición,
+    con tres números y con cinco— para que un enlace que alguien tenía abierto
     no pierda el ajuste entero por no traer un campo que aún no existía.
 
     Lo que no se entiende se ignora: esto viene de la barra de direcciones, que
@@ -301,18 +332,22 @@ def _lee_ajustes(valores) -> dict[str, episodes.Ajuste]:
         if role not in episodes.ROLES_MOVIBLES and role not in episodes.ROLES_VOLTEABLES:
             continue
         partes = numeros.split(",")
-        if len(partes) not in (3, 5):
+        if len(partes) not in (3, 5, 6):
             continue
         try:
             posicion = int(indice) if indice else 0
-            dx, dy, capa, vx, vy = (int(p) for p in [*partes, "0", "0"][:5])
+            # Lo que falta toma SU valor por defecto, no un cero: una escala
+            # ausente es 100, y rellenar con ceros la habría acotado al mínimo.
+            dx, dy, capa, vx, vy, escala = (int(p) for p in [*partes, *POR_DEFECTO[len(partes) :]])
         except ValueError:
             continue
         if not 0 <= posicion < episodes.MAXIMOS.get(role, 1):
             continue
         acotado = episodes.acotar(
             role,
-            episodes.Ajuste(dx=dx, dy=dy, capa=capa, voltear_x=bool(vx), voltear_y=bool(vy)),
+            episodes.Ajuste(
+                dx=dx, dy=dy, capa=capa, voltear_x=bool(vx), voltear_y=bool(vy), escala=escala
+            ),
         )
         if acotado == episodes.SIN_AJUSTE:
             continue
@@ -496,47 +531,13 @@ def _url_preview(
     )
 
 
-def _rango_del_ancho() -> dict[str, int]:
-    """Los topes y el paso del ancho del título, para el slider.
+def _url_lienzo(borrador: Borrador) -> str:
+    """El `data-lienzo` del paso: lo mismo que la página, sin el paso.
 
-    Salen del template por la misma razón que las muestras de fondo: el HTML no
-    puede tener su propia copia de un número de layout.
+    La marca no va: la pone el servidor, como en el preview. Y el título tampoco,
+    porque no vive en la URL sino en el formulario: la isla de JS lo agrega.
     """
-    tipografia = episodes.TIPOGRAFIA
-    return {
-        "min": -tipografia.ancho_menos,
-        "max": tipografia.ancho_mas,
-        "paso": tipografia.ancho_paso,
-    }
-
-
-def _rango_del_tamano() -> dict[str, int]:
-    """Lo mismo para el tamaño de la letra, que es el OTRO mando del título.
-
-    En cero el slider deja el tamaño del template, que es lo que Portada hacía
-    antes de que este mando existiera: el auto-ajuste elige el mayor que quepa.
-    """
-    tipografia = episodes.TIPOGRAFIA
-    return {
-        "min": -tipografia.tamano_menos,
-        "max": tipografia.tamano_mas,
-        "paso": tipografia.tamano_paso,
-    }
-
-
-def _rango_del_alto() -> dict[str, int]:
-    """Y el tercero: hasta dónde puede crecer el título hacia arriba.
-
-    Positivo es MÁS ALTO, no «más abajo»: los tres sliders dicen cuánto sitio
-    hay. Que arriba sea una `y` más chica es cosa del lienzo, y la traducción la
-    hace el template en `techo`, no la pantalla.
-    """
-    tipografia = episodes.TIPOGRAFIA
-    return {
-        "min": -tipografia.alto_menos,
-        "max": tipografia.alto_mas,
-        "paso": tipografia.alto_paso,
-    }
+    return "/nueva/lienzo.json?" + urlencode([*borrador.pares(), ("degradado", borrador.degradado)])
 
 
 def _tarjeta_episodio(episode) -> dict:
@@ -820,6 +821,8 @@ def preview(
     titulo_tamano: int = 0,
     titulo_alto: int = 0,
     titulo_apilado: int = 0,
+    titulo_x: int = 0,
+    titulo_y: int = 0,
 ) -> Response:
     """La miniatura de lo que llevo elegido (SPEC §8.4).
 
@@ -856,6 +859,8 @@ def preview(
             titulo_tamano=titulo_tamano,
             titulo_alto=titulo_alto,
             titulo_apilado=bool(titulo_apilado),
+            titulo_x=titulo_x,
+            titulo_y=titulo_y,
         )
     except AppError:
         # SPEC §11.4 llevado a la UI: el preview es mejora, nunca dependencia.
@@ -863,6 +868,303 @@ def preview(
         # con el icono de imagen partida.
         return Response(status_code=204, headers=SIN_CACHE)
     return Response(jpeg, media_type="image/jpeg", headers=SIN_CACHE)
+
+
+def _con_marca(db, settings, user_id: str, borrador: Borrador) -> dict[str, list[str]]:
+    """La selección del borrador más la marca, que el flujo da por puesta."""
+    return borrador.seleccion | {
+        role: [foto["id"]] for role, foto in _marca(db, settings, user_id).items()
+    }
+
+
+def _url_capa(nombre: str, pares: list[tuple[str, str | int]]) -> str:
+    return "/nueva/capa?" + urlencode([("nombre", nombre), *pares])
+
+
+def _src_de_la_capa(capa, borrador: Borrador, seleccion, titulo: dict) -> str:
+    """La URL de UNA capa, con lo que la cambia y nada más.
+
+    Es lo que hace barato arrastrar: la imagen de una figura depende de su foto,
+    su escala y sus volteos, no de dónde esté, así que moverla no cambia su URL
+    y el navegador no la vuelve a pedir. Si la URL llevara el borrador entero,
+    cada soltar volvería a bajar todas las capas.
+    """
+    nombre = capa.nombre
+    if nombre == "fondo":
+        a = borrador.ajuste("fondo", 0)
+        pares = [("fondo", pid) for pid in seleccion.get("fondo", [])]
+        volteo = episodes.Ajuste(voltear_x=a.voltear_x, voltear_y=a.voltear_y)
+        if volteo != episodes.SIN_AJUSTE:
+            pares.append(("ajuste", _texto_del_ajuste("fondo", 0, volteo)))
+        return _url_capa(nombre, [*pares, ("degradado", borrador.degradado)])
+    if nombre in ("logo", "marco"):
+        # La marca la pone el servidor; el id va solo para que la URL cambie
+        # cuando cambia la marca.
+        return _url_capa(nombre, [("v", seleccion[nombre][0])])
+    if nombre == "titulo":
+        return _url_capa(nombre, list(titulo.items()))
+    role, _, indice = nombre.partition(".")
+    posicion = int(indice)
+    a = borrador.ajuste(role, posicion)
+    forma = episodes.Ajuste(voltear_x=a.voltear_x, voltear_y=a.voltear_y, escala=a.escala)
+    pares = [(role, pid) for pid in seleccion.get(role, [])[: posicion + 1]]
+    if forma != episodes.SIN_AJUSTE:
+        pares.append(("ajuste", _texto_del_ajuste(role, posicion, forma)))
+    # El archivo del que sale, como versión: al quitarle el fondo la foto es la
+    # misma pero el archivo no, y sin esto el navegador seguiría con el viejo.
+    if capa.fuente:
+        pares.append(("v", capa.fuente.split(".")[0][:16]))
+    return _url_capa(nombre, pares)
+
+
+def _titulo_de(params) -> dict:
+    """Los campos del título de una petición del lienzo, como enteros."""
+
+    def _entero(nombre: str) -> int:
+        try:
+            return int(params.get(nombre, 0))
+        except ValueError:
+            return 0
+
+    return {
+        "title": params.get("title", ""),
+        "titulo_ancho": _entero("titulo_ancho"),
+        "titulo_tamano": _entero("titulo_tamano"),
+        "titulo_alto": _entero("titulo_alto"),
+        "titulo_apilado": _entero("titulo_apilado"),
+        "titulo_x": _entero("titulo_x"),
+        "titulo_y": _entero("titulo_y"),
+    }
+
+
+def _borrador_episodes(borrador: Borrador, seleccion, titulo: dict) -> dict:
+    return {
+        "selection": seleccion,
+        "degradado": borrador.degradado,
+        "ajustes": borrador.ajustes,
+        **titulo,
+        "titulo_apilado": bool(titulo["titulo_apilado"]),
+    }
+
+
+@router.get("/nueva/lienzo.json")
+def lienzo_json(request: Request, db: Db, settings: Config, user_id: OptionalUser) -> Response:
+    """Las capas de lo que llevo elegido, para moverlas en el navegador (WEB-43).
+
+    Lleva lo mismo que el preview y no escribe nada, igual que él. Lo que el
+    navegador hace con esto es APILAR: no sabe dónde va una figura ni cómo se
+    escala, solo lo que dice este JSON. Por eso lo que se ve al soltar es lo que
+    se descarga (COMPOSITION-42).
+
+    Mientras se arrastra no se pide nada. Al soltar se pide esto otra vez con el
+    ajuste nuevo, y lo que vuelve ya viene acotado: el servidor sigue siendo el
+    único que decide hasta dónde llega una figura.
+    """
+    if user_id is None:
+        return Response(status_code=401, headers=SIN_CACHE)
+
+    borrador = _borrador(request.query_params)
+    seleccion = _con_marca(db, settings, user_id, borrador)
+    titulo = _titulo_de(request.query_params)
+    try:
+        capas = episodes.lienzo(
+            db, settings, user_id=user_id, **_borrador_episodes(borrador, seleccion, titulo)
+        )
+    except AppError:
+        return Response(status_code=204, headers=SIN_CACHE)
+
+    tipografia = episodes.TIPOGRAFIA
+    movido = tipografia.desplazamiento(titulo["titulo_x"], titulo["titulo_y"])
+    descritas = []
+    ajustados = []
+    for capa in capas:
+        descrita = {
+            "nombre": capa.nombre,
+            "src": _src_de_la_capa(capa, borrador, seleccion, titulo),
+            "x": capa.x,
+            "y": capa.y,
+            "ancho": capa.imagen.width,
+            "alto": capa.imagen.height,
+            "mueve": capa.nombre == "titulo",
+            # Al degradado no se le aplica un volteo: solo a una foto de fondo.
+            "voltea": capa.nombre == "fondo" and bool(seleccion.get("fondo")),
+        }
+        if capa.ancla is not None:
+            role, _, indice = capa.nombre.partition(".")
+            ajuste = capa.ajuste or episodes.SIN_AJUSTE
+            descrita |= {
+                "rol": role,
+                "posicion": int(indice),
+                "etiqueta": _rotulo_de_figura(role, int(indice), seleccion),
+                "ancla": list(capa.ancla),
+                "apoyo": capa.apoyo,
+                "ajuste": {
+                    "dx": ajuste.dx,
+                    "dy": ajuste.dy,
+                    "capa": ajuste.capa,
+                    "voltear_x": ajuste.voltear_x,
+                    "voltear_y": ajuste.voltear_y,
+                    "escala": ajuste.escala,
+                },
+                "mueve": role in episodes.ROLES_MOVIBLES,
+                "voltea": role in episodes.ROLES_VOLTEABLES,
+                # Hasta dónde llegan «Atrás» y «Adelante», relativo al template:
+                # en el tope el botón se apaga en vez de no hacer nada.
+                "capas": [
+                    episodes.acotar(role, episodes.Ajuste(capa=-99)).capa,
+                    episodes.acotar(role, episodes.Ajuste(capa=99)).capa,
+                ],
+                **_recorte_de_figura(request, db, settings, user_id, role, int(indice), seleccion),
+            }
+            if ajuste != episodes.SIN_AJUSTE:
+                ajustados.append(_texto_del_ajuste(role, int(indice), ajuste))
+        elif capa.nombre == "titulo":
+            descrita |= _bloque_del_titulo(titulo, capa.tamano)
+        elif capa.nombre == "fondo" and capa.ajuste and capa.ajuste != episodes.SIN_AJUSTE:
+            descrita["ajuste"] = {
+                "voltear_x": capa.ajuste.voltear_x,
+                "voltear_y": capa.ajuste.voltear_y,
+            }
+            ajustados.append(_texto_del_ajuste("fondo", 0, capa.ajuste))
+        descritas.append(descrita)
+
+    return Response(
+        json.dumps(
+            {
+                "lienzo": list(episodes.TEMPLATE.canvas),
+                "capas": descritas,
+                # Los ajustes EFECTIVOS, en el formato de la URL: el navegador
+                # los copia tal cual a la barra de direcciones. Solo escribe uno
+                # para pedirlo, y se queda con el que vuelve aquí, ya acotado.
+                "ajustes": sorted(ajustados),
+                "titulo": {"x": movido[0], "y": movido[1]},
+                "limites": {
+                    "escala": [episodes.AJUSTES.escala_min, episodes.AJUSTES.escala_max],
+                    "titulo": {
+                        "izquierda": tipografia.mover_izquierda,
+                        "derecha": tipografia.mover_derecha,
+                        "arriba": tipografia.mover_arriba,
+                        "abajo": tipografia.mover_abajo,
+                    },
+                },
+            }
+        ),
+        media_type="application/json",
+        headers=SIN_CACHE,
+    )
+
+
+def _bloque_del_titulo(titulo: dict, tamano: int | None) -> dict:
+    """Lo que las asas del título necesitan: el BLOQUE y no la tinta (WEB-45).
+
+    La caja de la capa es lo que tiene tinta; el bloque es lo que los mandos
+    miden -- desde `left` y el techo hasta la regla de acento --, y es lo que el
+    navegador estira. Se calcula con los mismos métodos del template que usa el
+    armado, así que no hay una segunda geometría del título en la pantalla.
+
+    `mandos` y `rangos` son los de los sliders del paso: las asas mueven esos
+    mismos tres números, con sus mismos pasos.
+    """
+    tipografia = episodes.TIPOGRAFIA
+    movida = tipografia.movida(titulo["titulo_x"], titulo["titulo_y"])
+    techo = movida.techo(titulo["titulo_alto"])
+    regla = movida.bottom + movida.rule_gap + movida.rule_height
+    return {
+        "bloque": {
+            "x": movida.left,
+            "y": techo,
+            "ancho": movida.ancho(titulo["titulo_ancho"]),
+            "alto": regla - techo,
+        },
+        "tamano": tamano,
+        # Desde dónde cuenta el mando del tamaño: «+16» es 16 sobre ESTE.
+        "tamano_base": tipografia.size_max,
+        "mandos": {
+            "ancho": tipografia.ensanche(titulo["titulo_ancho"]),
+            "tamano": tipografia.cambio_de_tamano(titulo["titulo_tamano"]),
+            "alto": tipografia.cambio_de_alto(titulo["titulo_alto"]),
+        },
+        "rangos": {
+            "ancho": [-tipografia.ancho_menos, tipografia.ancho_mas, tipografia.ancho_paso],
+            "tamano": [-tipografia.tamano_menos, tipografia.tamano_mas, tipografia.tamano_paso],
+            "alto": [-tipografia.alto_menos, tipografia.alto_mas, tipografia.alto_paso],
+        },
+    }
+
+
+def _recorte_de_figura(request, db, settings, user_id, role, posicion, seleccion) -> dict:
+    """De qué foto es la figura y si tiene el fondo quitado (WEB-46).
+
+    `admite` dice si el botón hace algo: el rol tiene que admitir recorte, y el
+    proveedor tiene que quitar fondos de verdad. Con `passthrough` el botón
+    llamaría a un recorte que devuelve la misma imagen (WEB-36).
+    """
+    fotos = seleccion.get(role, [])
+    if posicion >= len(fotos):
+        return {}
+    photo_id = fotos[posicion]
+    try:
+        photo = library.get_photo(db, user_id=user_id, photo_id=photo_id)
+        puesto = library.resolve_media(db, settings, photo).id != photo.media_id
+    except AppError:
+        return {}
+    return {
+        "foto": photo_id,
+        "recorte": {
+            "admite": role in library.ROLES_CON_RECORTE
+            and request.app.state.cutout_provider.quita_fondo,
+            "puesto": puesto,
+        },
+    }
+
+
+def _rotulo_de_figura(role: str, posicion: int, seleccion) -> str:
+    if len(seleccion.get(role, [])) <= 1:
+        return ETIQUETAS[role]
+    return f"{FIGURAS.get(role, ETIQUETAS[role].lower()).capitalize()} {posicion + 1}"
+
+
+# `def` y no `async def`: aquí dentro se dibuja con Pillow.
+@router.get("/nueva/capa")
+def capa_del_lienzo(
+    request: Request, db: Db, settings: Config, user_id: OptionalUser, nombre: str = ""
+) -> Response:
+    """UNA capa del lienzo (ver `_src_de_la_capa`), a la escala del preview.
+
+    Se revalida en vez de cachearse un año, por la trampa de siempre: la URL de
+    una figura lleva el id de la foto y no el hash del archivo, y una foto cambia
+    de bytes cuando termina su recorte. Con `no-cache` y un `ETag` cuesta un 304.
+
+    Sin sesión, 401; una selección que no resuelve —una foto ajena—, 204: dos
+    respuestas distintas para que un test pueda vigilar cada camino (WEB-24).
+    """
+    if user_id is None:
+        return Response(status_code=401, headers=SIN_CACHE)
+
+    borrador = _borrador(request.query_params)
+    seleccion = borrador.seleccion
+    if nombre in ("logo", "marco"):
+        seleccion = _con_marca(db, settings, user_id, borrador)
+    titulo = _titulo_de(request.query_params)
+    try:
+        servida = episodes.capa(
+            db,
+            settings,
+            nombre,
+            user_id=user_id,
+            **_borrador_episodes(borrador, seleccion, titulo),
+        )
+    except AppError:
+        servida = None
+    if servida is None:
+        return Response(status_code=204, headers=SIN_CACHE)
+
+    contenido, media_type = servida
+    etag = '"' + hashlib.sha256(contenido).hexdigest()[:20] + '"'
+    cabeceras = {"Cache-Control": "private, no-cache", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cabeceras)
+    return Response(contenido, media_type=media_type, headers=cabeceras)
 
 
 @router.get("/nueva")
@@ -884,24 +1186,21 @@ def flujo(
         "paso": paso,
         "total": len(PASOS),
         "preview": _url_preview(con_marca),
-        # El rango del ancho del título sale del template y no de la plantilla:
-        # escribirlo en el HTML sería una segunda verdad, y el día que cambie el
-        # bloque el slider seguiría ofreciendo el rango viejo.
+        "lienzo": _url_lienzo(borrador),
+        # Los mandos del título arrancan en cero; sus rangos no van aquí sino
+        # en `lienzo.json`, que es quien los usa (las asas del título).
         "titulo": "",
         "titulo_ancho": 0,
         "titulo_tamano": 0,
         "titulo_alto": 0,
         "titulo_apilado": False,
-        "ancho_titulo": _rango_del_ancho(),
-        "tamano_titulo": _rango_del_tamano(),
-        "alto_titulo": _rango_del_alto(),
+        "titulo_x": 0,
+        "titulo_y": 0,
         "role": role,
         "etiquetas": ETIQUETAS,
         "ayudas": AYUDAS,
         "seleccion": seleccion,
         "marca": marca,
-        "intensidades": episodes.STRENGTHS,
-        "intensidad": episodes.DEFAULT_STRENGTH,
         "degradado": borrador.degradado,
         "ajustadas": sorted(borrador.ajustes),
         "atras": _url_flujo(paso - 1, borrador) if paso > 1 else "/",
@@ -980,7 +1279,11 @@ def crear(
     # del campo, nunca su valor -- un `== "on"` funcionaría de casualidad hasta
     # el día que alguien le cambie el `value`.
     titulo_apilado: Annotated[str, Form()] = "",
-    # Los empujones viajan como texto, uno por rol movido: `conductor:40,-20,1`.
+    # Dónde se movió el bloque del título en el lienzo. Viaja con el formulario,
+    # como el resto del título: no vive en la URL.
+    titulo_x: Annotated[int, Form()] = 0,
+    titulo_y: Annotated[int, Form()] = 0,
+    # Los ajustes viajan como texto, uno por figura: `invitado.1:40,-20,1,0,0,120`.
     ajuste: Annotated[list[str], Form()] = [],  # noqa: B006
     # Los roles se declaran uno a uno en vez de leer el formulario entero: en una
     # ruta síncrona no se puede `await request.form()`, y además así la firma
@@ -1027,6 +1330,8 @@ def crear(
             titulo_tamano=titulo_tamano,
             titulo_alto=titulo_alto,
             titulo_apilado=bool(titulo_apilado),
+            titulo_x=titulo_x,
+            titulo_y=titulo_y,
         )
         episodes.build_assembly(
             db,
@@ -1050,8 +1355,6 @@ def crear(
                 "ayudas": AYUDAS,
                 "seleccion": formulario,
                 "marca": marca,
-                "intensidades": episodes.STRENGTHS,
-                "intensidad": strength,
                 "degradado": degradado,
                 "ajustadas": sorted(ajustes),
                 "titulo": title,
@@ -1061,10 +1364,10 @@ def crear(
                 "titulo_tamano": titulo_tamano,
                 "titulo_alto": titulo_alto,
                 "titulo_apilado": bool(titulo_apilado),
-                "ancho_titulo": _rango_del_ancho(),
-                "tamano_titulo": _rango_del_tamano(),
-                "alto_titulo": _rango_del_alto(),
+                "titulo_x": titulo_x,
+                "titulo_y": titulo_y,
                 "atras": _url_flujo(len(PASOS) - 1, fallido),
+                "lienzo": _url_lienzo(fallido),
                 "campos": fallido.pares(),
                 "preview": _url_preview(
                     fallido.con(

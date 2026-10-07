@@ -128,7 +128,8 @@ def _validate_ajustes(
                 details={"role": role, "max": tope, "given": len(pedidos)},
             )
         for ajuste in pedidos:
-            if (ajuste.dx or ajuste.dy or ajuste.capa) and role not in composition.ROLES_MOVIBLES:
+            mueve = ajuste.dx or ajuste.dy or ajuste.capa or ajuste.escala != 100
+            if mueve and role not in composition.ROLES_MOVIBLES:
                 raise errors.SeleccionInvalida(
                     f"Ese rol no se puede mover: {role!r}.",
                     details={"role": role, "valid": list(composition.ROLES_MOVIBLES)},
@@ -179,6 +180,8 @@ def create_episode(
     titulo_tamano: int = 0,
     titulo_alto: int = 0,
     titulo_apilado: bool = False,
+    titulo_x: int = 0,
+    titulo_y: int = 0,
 ) -> repo.Episode:
     if strength not in finishing.STRENGTHS:
         raise errors.SeleccionInvalida(
@@ -189,6 +192,7 @@ def create_episode(
     limpios = _validate_ajustes(ajustes)
     limpia = _validate_selection(db, user_id=user_id, selection=selection)
     limpios = _solo_las_figuras_elegidas(limpios, limpia)
+    movido = composition.TEMPLATE.typography.desplazamiento(titulo_x, titulo_y)
 
     with db.transaction() as conn:
         episode = repo.insert(
@@ -203,6 +207,8 @@ def create_episode(
             titulo_tamano=composition.TEMPLATE.typography.cambio_de_tamano(titulo_tamano),
             titulo_alto=composition.TEMPLATE.typography.cambio_de_alto(titulo_alto),
             titulo_apilado=titulo_apilado,
+            titulo_x=movido[0],
+            titulo_y=movido[1],
             selection=limpia,
             ajustes=limpios,
         )
@@ -262,6 +268,8 @@ def _brief_de(
     titulo_tamano: int = 0,
     titulo_alto: int = 0,
     titulo_apilado: bool = False,
+    titulo_x: int = 0,
+    titulo_y: int = 0,
     referencia: str = "",
 ) -> composition.Brief:
     """Resuelve una seleccion a rutas de archivo.
@@ -294,6 +302,8 @@ def _brief_de(
         titulo_tamano=titulo_tamano,
         titulo_alto=titulo_alto,
         titulo_apilado=titulo_apilado,
+        titulo_x=titulo_x,
+        titulo_y=titulo_y,
     )
 
 
@@ -310,36 +320,36 @@ def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> com
         titulo_tamano=episode.titulo_tamano,
         titulo_alto=episode.titulo_alto,
         titulo_apilado=episode.titulo_apilado,
+        titulo_x=episode.titulo_x,
+        titulo_y=episode.titulo_y,
         referencia=episode.id,
     )
 
 
-def preview(
+def _brief_del_borrador(
     db: Database,
     settings: Settings,
     *,
     user_id: str,
     selection: dict[str, list[str]],
-    title: str,
+    title: str = "",
     degradado: str = composition.DEGRADADO_POR_DEFECTO,
     ajustes: dict[str, list[composition.Ajuste]] | None = None,
     titulo_ancho: int = 0,
     titulo_tamano: int = 0,
     titulo_alto: int = 0,
     titulo_apilado: bool = False,
-) -> bytes:
-    """La miniatura en pequeno de una seleccion que todavia no es un episodio.
-
-    No escribe nada: ni fila, ni archivo. Es lo que permite que el flujo semanal
-    ensene el resultado en cada toque sin dejar episodios a medias por el camino
-    (SPEC 8.4), y lo que hace que el episodio se cree solo cuando se confirma.
+    titulo_x: int = 0,
+    titulo_y: int = 0,
+) -> composition.Brief:
+    """El brief de una seleccion que todavia no es un episodio.
 
     La seleccion se valida igual que al crear -- `get_photo` lanza 404 si la foto
     no es tuya -- pero sin los MINIMOS: a mitad del flujo todavia no hay
     conductor, y eso no es un error, es el paso 1.
     """
     limpia = _validate_selection(db, user_id=user_id, selection=selection, exigir_minimos=False)
-    brief = _brief_de(
+    return _brief_de(
         db,
         settings,
         user_id=user_id,
@@ -351,8 +361,35 @@ def preview(
         titulo_tamano=titulo_tamano,
         titulo_alto=titulo_alto,
         titulo_apilado=titulo_apilado,
+        titulo_x=titulo_x,
+        titulo_y=titulo_y,
     )
-    return composition.preview(brief)
+
+
+def preview(db: Database, settings: Settings, **borrador) -> bytes:
+    """La miniatura en pequeno de una seleccion que todavia no es un episodio.
+
+    No escribe nada: ni fila, ni archivo. Es lo que permite que el flujo semanal
+    ensene el resultado en cada toque sin dejar episodios a medias por el camino
+    (SPEC 8.4), y lo que hace que el episodio se cree solo cuando se confirma.
+    `borrador` son los argumentos de `_brief_del_borrador`.
+    """
+    return composition.preview(_brief_del_borrador(db, settings, **borrador))
+
+
+def lienzo(db: Database, settings: Settings, **borrador) -> list[composition.Capa]:
+    """El mismo borrador que `preview`, sin apilar: las capas y su sitio.
+
+    Tampoco escribe nada. Es lo que el navegador apila para mover una figura
+    bajo el dedo, y apilarlo da lo mismo que `preview` (COMPOSITION-42).
+    """
+    return composition.capas(_brief_del_borrador(db, settings, **borrador))
+
+
+def capa(db: Database, settings: Settings, nombre: str, **borrador) -> tuple[bytes, str] | None:
+    """UNA capa del lienzo, lista para servir. `None` si ese borrador no la tiene."""
+    puesta = composition.capa(_brief_del_borrador(db, settings, **borrador), nombre)
+    return composition.entregar(puesta) if puesta else None
 
 
 def build_assembly(

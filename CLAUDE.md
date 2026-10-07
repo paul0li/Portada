@@ -5,6 +5,21 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 
 ## Outcome actual
 
+**Las figuras y el título se mueven con el dedo, como en Canva** (template v11).
+El preview de cada paso es un lienzo: se toca una figura, se arrastra, se escala
+desde su asa o pellizcando, se voltea y se cambia de capa, y al soltar lo que se
+ve es lo que se descarga. Libre dentro del lienzo: lo único que se acota es que
+el centro de una figura no salga del cuadro. **231 tests.**
+
+Lo que lo hace honesto es que el navegador **apila; no compone**. El servidor
+sirve las capas del armado (fondo, cada figura, logo, título, marco) con su
+sitio, y el armado final ES apilar esas capas (`COMPOSITION-42`). Mientras se
+arrastra no se pide nada; al soltar, `lienzo.json` devuelve el ajuste ya
+acotado en ~30 ms y la URL guarda el borrador, así que «atrás» deshace.
+
+**Lo que NO se construyó:** rotar, mover el logo o el marco, guías con imán,
+editar desde la pantalla del resultado.
+
 **El frontend está terminado: Portada se usa de punta a punta.** Inicio con el
 punto de entrada y los recientes, la librería, el flujo de cinco pasos con el
 preview en vivo, el resultado descargable y el historial. Desde el teléfono, en
@@ -253,6 +268,14 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-30 | **El título se ancla a la línea base**, no a la ascendente | La ascendente la elige cada tipografía a su gusto; anclar a ella hacía que `bottom=500` significara una altura distinta según la fuente | Nada: la línea base es lo que «se apoya en y=500» quiere decir |
 | 2026-08-31 | **La URL del armado se revalida, no se cachea un año** | Es un PUNTERO al último armado, no un archivo: corregir el título produce otro. Con `immutable` el navegador hacía lo correcto —no volver a pedirla— y la miniatura vieja se quedaba en pantalla. `no-cache` + `ETag` cuesta un 304 (3,4 ms) y nunca miente. Lo mismo en `/photos/{id}/file`, que sirve el recorte si está listo y si no el original | Que las URLs pasen a llevar el hash del contenido. Entonces sí son inmutables y el año vuelve |
 | 2026-08-31 | **El historial es una lista de una columna, no una rejilla de dos** | A 430 px, dos miniaturas 16:9 por línea son 96 px de ancho, y a ese tamaño no se reconoce cuál es cuál — que es lo único que un historial tiene que hacer | Una pantalla ancha de verdad, no un teléfono |
+| 2026-10-07 | **Las asas del título reemplazan a los sliders** | «Botones de arrastre que permitan ensanchar o alargar, como lo hace Canva, y una esquina para agrandar o achicar». El borde derecho es el ancho, el de arriba el alto, la esquina agranda todo en proporción. Mueven los MISMOS tres mandos, con los mismos pasos del template, y viajan como campos ocultos: no hay un segundo número para la misma cosa. El texto se reparte en el servidor mientras se arrastra, de a una petición | Que el título deje de estar alineado a la izquierda: «ensanchar» dejaría de ser mover el borde derecho |
+| 2026-10-07 | **Fuera de la pantalla: sliders, «una palabra por línea», su explicación y la intensidad** | Las asas hacen lo de los sliders, y angostar el bloque apila. La intensidad no cambia nada con `NoopFinisher`: era un botón que miente. La API acepta todo igual | Que exista la pasada de IA: entonces la intensidad vuelve |
+| 2026-10-07 | **El fondo con foto ya no se oscurece ni lleva viñeta** (template v12) | «Elimina la capa de oscuridad». Quien elige una foto de fondo la elige para que se vea. Quedan la desaturación (0,35) y el desenfoque (2 px), que no oscurecen | Que el título deje de leerse sobre fondos claros: el contorno oscuro es lo que lo sostiene ahora |
+| 2026-10-07 | **Mover es libre y se escala** (template v11) | «Que las imágenes se puedan mover libremente, refrescando inmediatamente, como Photoshop o Canva». Se van los pasos de 20 px y los topes de ±400/±200, que existían justo para que empujar no fuera «colocar donde sea» — que es ahora lo que se pide. Queda lo físico: el centro de la figura dentro del lienzo (calculado con la figura escalada y su sitio en el grupo), la escala entre 40 % y 200 %, la capa entre el fondo y el título. El título se mueve entero (texto, techo y regla) y es overlay. Con todo en cero no cambia un píxel | Que haga falta rotar. Entonces la capa deja de ser un rectángulo y el toque por alfa y el asa se rehacen |
+| 2026-10-07 | **El navegador apila capas del servidor; no hay segunda implementación del template** | La reversión que preveía «el backend renderiza» era servir el template como JSON y que los dos lados lo interpretaran. No hizo falta: el servidor sirve cada capa ya dibujada con su sitio, y `compose` pasó a ser apilar esas mismas capas. Así «lo que ves es lo que se descarga» es una propiedad del código (`COMPOSITION-42`), no una coincidencia que vigilar | Que el navegador tenga que dibujar algo que el servidor no puede servir como imagen: el título letra a letra, un filtro en vivo |
+| 2026-10-07 | **JS propio (~450 líneas), sin librería** | Se permitía una librería, y se miró: los gestos son dos —arrastrar y escalar— y con Pointer Events son pocas líneas. Konva o Moveable traían un modelo de escena propio que había que sincronizar con `lienzo.json`, que es justo lo que no queremos tener dos veces | Rotar, multiselección, guías con imán: ahí una librería de transformaciones se paga sola |
+| 2026-10-07 | **Cada capa se pide con lo que la cambia y nada más** | La URL de una figura lleva su foto, su escala y sus volteos, no su sitio: arrastrar no vuelve a bajar ninguna imagen. Con el borrador entero en la URL, cada soltar bajaba todas las capas. Se revalidan con `ETag` y no son `immutable`, por la trampa de siempre: llevan el id de la foto y no el hash del archivo | Que las URLs lleven el hash del archivo recortado |
+| 2026-10-07 | **Los estáticos llevan la huella de su contenido** (`estatico()` en Jinja) | Al hacer el lienzo, Chrome siguió con la `app.css` vieja después de editarla. En un teléfono eso es Portada actualizada con el CSS de ayer | Nada |
 | 2026-09-16 | **Tocar el tamaño le pasa el mando al episodio** (template v10) | «Lo que espero es poder manipular dónde va cada palabra a mi gusto». Con el auto-ajuste al mando eso no se podía, y el motivo no eran los rangos: era el **máximo de tres líneas**. Con ese tope puesto, angostar el bloque no puede apilar las palabras — no le queda más que achicarlas —, así que los tres mandos terminaban pareciendo el mando del tamaño. Ahora hay dos caminos: con el tamaño en cero manda el template (Portada de siempre, ni un píxel distinto en ningún episodio viejo), y en cuanto se toca, el tamaño es el tamaño y la regla de las tres líneas se cae. Entonces el **ancho** reparte las palabras, el **alto** dice hasta dónde pueden crecer, y lo único que cede es lo físico: si no entra en el bloque, baja el tamaño hasta que entre. Rangos: bloque 212–932 px, letra 64–200 px, techo y=250…y=10 | Que haga falta colocar el título de verdad —arrastrarlo, centrarlo, girarlo—. Ahí el título deja de ser «un bloque con mandos» y pasa a ser una figura más, con su `Ajuste` |
 | 2026-09-16 | **El alto del bloque llega hasta arriba del lienzo**, no hasta el borde del marco | Con el auto-ajuste al mando sobraba con y=50: el marco tiene 16 px de borde y ahí arriba ya casi no hay miniatura. Con el tamaño puesto es otra cosa — el alto es **lo que decide si angostar apila o achica**. Si el bloque se queda corto, lo que cede es el tamaño, y entonces el mando del ancho vuelve a comportarse como uno de tamaño, que es justo el problema que veníamos a arreglar. Pasarse del borde del marco es una decisión de la semana, como invadir a una figura: se ve en el preview | Nada |
 | 2026-09-16 | **Los topes se miden, no se razonan** | Dos veces en la misma tarde. Dejé el tamaño bajando solo, razonando que hacia arriba el auto-ajuste ya da el mayor que cabe: falso — medido, «NADIE LO VIO» sale a 104 px en una línea de 99 dentro de un bloque de 350, y lo único que lo frena es `size_max`. Y puse `alto_mas` en y=50 razonando sobre el borde del marco, cuando lo que manda es si el texto apilado entra. Un tope que no se mide es un tope inventado | Nada |
@@ -405,6 +428,21 @@ vuelvan a morder en la próxima.
   hiciera nada. Por eso `web` tiene su propio `/salir` que redirige. Regla
   general: un endpoint pensado para un cliente no sirve tal cual para un
   formulario, y la diferencia no la enseña ningún test de la API.
+- **Una regla de `img` de la página se le aplica a cada capa del lienzo.**
+  `.preview-fijo img` le daba al `<img>` del preview un fondo rayado; las capas
+  del lienzo también son `<img>` dentro de ese contenedor, así que cada una
+  heredó el fondo opaco y la de arriba —el marco, a sangre completa— tapaba
+  todo. Ningún test lo ve: los píxeles que sirve el servidor estaban bien. Por
+  eso la regla es `> img` y `.lienzo .capa` resetea fondo, borde y proporción.
+- **El rojo de la marca es el peor color para seleccionar sobre la miniatura.**
+  El recuadro de selección rojo, sobre el marco rojo y un fondo oscuro, solo
+  dejaba ver uno de sus lados: parecía una línea suelta. Es la trampa del acento
+  que desaparece, del lado de la interfaz. La selección es blanca con sombra.
+- **En el mando del tamaño, 0 no es «104 px»: es AUTOMÁTICO.** Al tocar el
+  asa del ancho, el tamaño se fija en el que tenía para que estirar reparta en
+  vez de agrandar. Un 100 redondeado al paso de 8 caía en 0, el tamaño volvía al
+  automático y angostar achicaba la letra — la trampa de v10 otra vez, por un
+  redondeo. Se fija en el paso más cercano que no sea cero.
 - **`Image.verify()` deja el objeto inutilizable.** Hay que abrir la imagen dos
   veces: una para validar la estructura y otra para leer sus metadatos.
 - **El límite de píxeles se comprueba después del encabezado y antes de decodificar.**

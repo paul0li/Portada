@@ -15,13 +15,15 @@ y un título, sale un PNG.
 
 ## Empujar una figura (SPEC §6)
 
-El template decide la posición **de partida**, no la final. Un episodio puede
-empujar `conductor`, `invitado` y `objeto` y reordenarlos entre ellos, dentro de
-los límites del propio template. Lo que no puede: cambiar el tamaño, salirse de
-los topes, meterse debajo del fondo ni taparle el título.
+El template decide la posición **y el tamaño de partida**, no los finales. Un
+episodio puede mover `conductor`, `invitado` y `objeto` a donde quiera, escalarlos
+y reordenarlos entre ellos (v11: «como en Canva»). Lo que no puede: sacar una
+figura del cuadro, meterla debajo del fondo ni taparle el título. Cuánto se puede
+escalar y qué cuenta como «fuera del cuadro» lo sigue diciendo el template.
 
 - **COMPOSITION-27** — un ajuste desplaza al rol respecto de su slot y su capa decide quién tapa a quién; con los ajustes en cero sale exactamente la misma imagen que sin ellos.
-- **COMPOSITION-28** — un ajuste desmedido se acota a los topes del template en vez de sacar la figura del cuadro, y una capa no puede esconder una figura bajo el fondo ni ponerla sobre el título.
+- **COMPOSITION-28** — un ajuste desmedido se acota en vez de sacar la figura del cuadro: el **centro** de la figura se queda dentro del lienzo, sea cual sea su escala y su sitio en el grupo. No hay pasos ni otros topes. Y una capa no puede esconder una figura bajo el fondo ni ponerla sobre el título.
+- **COMPOSITION-40** — un ajuste puede escalar la figura, en porcentaje del tamaño que le da el template y dentro del rango que el template autora. En 100 no cambia ni un píxel; la figura escalada sigue apoyada en su mismo punto (por la base el conductor, por el centro un objeto), y la escala va en el checksum de la **base**.
 - **COMPOSITION-29** — los ajustes van en el checksum de la **base**: mover una figura invalida lo de abajo, al revés que el título. Y un ajuste que no mueve nada no produce un checksum distinto.
 
 ## Voltear una figura (SPEC §6)
@@ -55,6 +57,7 @@ template autora el rango y el paso; el episodio elige dentro.
 - **COMPOSITION-37** — el título puede ir a una palabra por línea. Si no caben tantas, se vuelve al corte normal y se dice cuál se usó: apilar es un look, y ningún look justifica perder media frase.
 - **COMPOSITION-38** — tocar el tamaño le pasa el mando al episodio: ese **es** el tamaño, y deja de regir el máximo de tres líneas. Con el tamaño en cero manda el template, como siempre. Es la diferencia entre repartir el texto y reinterpretarlo: con el auto-ajuste al mando, ensanchar el bloque no cambiaba el corte —subía el tamaño y el título se partía en las mismas líneas, más grande— y angostarlo no apilaba las palabras, las achicaba. Con el tamaño puesto, el ancho reparte y el alto dice hasta dónde pueden crecer. Lo único que sigue cediendo es lo físico: si no entra en el bloque, baja el tamaño hasta que entre. También es *overlay*.
 - **COMPOSITION-39** — el episodio puede subir o bajar el **techo** del bloque del título dentro de los topes del template. El título sigue apoyado donde dice el template y crece hacia arriba, así que subir el techo es dejar entrar más líneas antes de que el auto-ajuste achique la letra —y es lo que hace que «una palabra por línea» quepa con más palabras—. Bajarlo aprieta el bloque y el auto-ajuste responde. También es *overlay*.
+- **COMPOSITION-41** — el bloque del título se puede **mover** entero —texto, techo y regla de acento juntos—, sin cambiar cómo se corta ni de qué tamaño sale. Un desplazamiento desmedido se acota para que el bloque no salga del lienzo. Es *overlay*: no invalida la base.
 
 ## La separación base / final (SPEC §7)
 
@@ -90,6 +93,7 @@ no toca la base, y la base es lo caro.
 - **COMPOSITION-22** — cambiar solo el título reusa la base ya dibujada en vez de volver a componerla.
 - **COMPOSITION-23** — el preview sale de la misma composición: mismo template y mismo layout, solo más pequeño y en JPEG. Si fuera otra implementación, dejaría de ser cierto que el layout vive en un archivo.
 - **COMPOSITION-24** — repintar el preview por un cambio de título tarda menos de 60 ms.
+- **COMPOSITION-42** — el armado se puede pedir **por capas** —fondo, cada figura, logo, título y marco, en orden de dibujo y cada una con su sitio— y apilarlas donde dicen da **exactamente** la miniatura final. Es lo que deja al navegador mover una figura bajo el dedo sin una segunda implementación del template: el navegador apila, no compone. Si las capas y el armado pudieran diferir, el editor enseñaría una miniatura que no es la que se descarga.
 
 ## Identidad del armado
 

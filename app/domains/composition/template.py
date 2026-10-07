@@ -10,11 +10,26 @@ coincidir con las viejas, y hay un test que falla si se edita sin subirlo.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Literal
 
-TEMPLATE_VERSION = 10
+TEMPLATE_VERSION = 12
+# v12 (2026-10-07): una foto de fondo ya no se oscurece ni lleva vineta. "Elimina
+#   la capa de oscuridad que se le pone a las imagenes cuando elijo ponerlas como
+#   fondo." El tratamiento existia para que el fondo "se quedara detras" (SPEC
+#   6), pero quien elige una foto de fondo la elige para que se vea. Se quedan la
+#   desaturacion y el desenfoque, que no oscurecen. Sin foto de fondo -- el
+#   degradado -- no cambia ni un pixel.
+# v11 (2026-10-07): mover deja de ser empujar. "Que las imagenes se puedan mover
+#   libremente, como en Photoshop o Canva": las figuras van a donde se las lleve
+#   y se ESCALAN, y el bloque del titulo tambien se mueve. Lo que desaparece son
+#   los topes de +-400/+-200, que estaban justo para que empujar no acabara
+#   siendo "colocar donde sea" -- que es ahora lo que se pide. Lo que queda es
+#   lo fisico: el centro de una figura no sale del lienzo (perderla no es
+#   moverla), la escala tiene un rango, y la capa sigue entre el fondo y el
+#   titulo. El template sigue diciendo de donde se parte y hasta donde se llega.
+#   Con todo en cero no cambia ni un pixel.
 # v10 (2026-09-16): el tamano de la letra del titulo deja de ser cosa unica del
 #   auto-ajuste. Con un solo mando -- el ancho del bloque -- ensanchar subia el
 #   tamano y el titulo se cortaba en las MISMAS lineas, solo que mas grande: el
@@ -213,14 +228,16 @@ MAX_POR_ROL: Mapping[str, int] = MappingProxyType(
 # queda tapado o que un objeto pisa el titulo, y arreglarlo pedia editar este
 # archivo: cambiar el canal entero para arreglar UNA miniatura.
 #
-# Un empujon acotado arregla esa miniatura y deja las demas quietas. Lo que
-# sigue sin poderse: cambiar el tamano, salirse de los topes, esconderse debajo
-# del fondo o taparle el titulo. La consistencia de SPEC 15.3 vive en que los
-# slots, las alturas y todo lo demas sigan siendo de aqui.
+# Desde v11 mover es libre y se puede escalar: el template dice de donde se
+# parte, y la semana a donde se llega. Lo que sigue sin poderse: perder una
+# figura fuera del cuadro, esconderla debajo del fondo o taparle el titulo. La
+# consistencia de SPEC 15.3 vive ahora en el PUNTO DE PARTIDA -- un episodio que
+# no toca nada sale exactamente como el canal -- y no en impedir tocar.
 
-# Los roles que un episodio puede mover. El fondo y el marco van a sangre
-# completa -- no hay donde moverlos -- y el logo y el titulo son mobiliario de
-# marca (SPEC 11.5): justo los que nunca se tocan.
+# Los roles que un episodio puede mover y escalar. El fondo y el marco van a
+# sangre completa -- no hay donde moverlos -- y el logo es mobiliario de marca
+# (SPEC 11.5). El titulo SI se mueve, pero no es una figura: su bloque tiene sus
+# propios mandos en `Typography`.
 ROLES_MOVIBLES = ("objeto", "invitado", "conductor")
 
 # Los roles que un episodio puede VOLTEAR. Son mas que los que puede mover, y
@@ -236,19 +253,25 @@ ROLES_VOLTEABLES = ("fondo", "objeto", "invitado", "conductor")
 
 @dataclass(frozen=True, slots=True)
 class Ajustes:
-    """Cuanto es un empujon y hasta donde llega.
+    """Hasta donde llega lo que un episodio le hace a una figura.
 
-    `paso` es de 20px porque una miniatura se mira a ~320px de ancho: ahi 20px
-    son 5, que es el empujon mas chico que se nota. Con 4px no pasaria nada
-    visible y harian falta veinte toques para mover algo.
+    Desde v11 no hay topes de movimiento: el unico limite es que el CENTRO de la
+    figura siga dentro del lienzo, y ese no es un numero de aqui sino del lienzo
+    mismo (ver `assembly.acotar`). Una figura con el centro fuera es una figura
+    perdida, y desde un telefono no hay forma de agarrarla para traerla de vuelta.
 
-    Los topes no estan para proteger el lienzo: estan para que "empujar" no
-    acabe siendo "colocar donde sea", que es otro producto.
+    `paso` sigue existiendo para los pads sin JS: 20px porque una miniatura se
+    mira a ~320px de ancho, y ahi 20px son 5 -- el empujon mas chico que se nota.
+    En el lienzo no cuenta: un pixel es un movimiento valido.
     """
 
     paso: int = 20
-    max_x: int = 400
-    max_y: int = 200
+    # La escala, en porcentaje del tamano que el slot le da. 40 y no menos: a
+    # 320px de feed una figura al 40% del conductor ya es una cara de 30px. Y
+    # 200 y no mas: un busto al doble es una cabeza que llena el cuadro, y a
+    # partir de ahi lo que se esta pidiendo es otra foto, no otra escala.
+    escala_min: int = 40
+    escala_max: int = 200
     # La capa efectiva se queda entre el fondo (z=0) y el titulo (z=4): una
     # figura no puede esconderse detras del degradado ni taparle el titulo.
     capa_min: int = 1
@@ -378,6 +401,15 @@ class Typography:
     alto_menos: int = 100  # el techo baja hasta y=250
     alto_mas: int = 140  # y sube hasta y=10
 
+    # Cuanto se puede MOVER el bloque entero -- texto, techo y regla juntos --
+    # respecto de donde lo pone el template (v11). Los topes son el lienzo y no
+    # una opinion: la regla de acento no se sale por ningun lado, y el bloque
+    # no baja de y=120, donde ya no cabe ni una linea al tamano minimo.
+    mover_izquierda: int = 48  # left llega a x=0
+    mover_derecha: int = 1032  # la regla (200px) termina justo en x=1280
+    mover_arriba: int = 380  # bottom sube hasta y=120
+    mover_abajo: int = 184  # la regla (gap 22 + 14) termina justo en y=720
+
     @property
     def block_width(self) -> int:
         return self.right - self.left
@@ -417,6 +449,32 @@ class Typography:
         arriba, o sea una `y` mas chica.
         """
         return self.top - self.cambio_de_alto(extra)
+
+    def desplazamiento(self, dx: int, dy: int) -> tuple[int, int]:
+        """Cuanto se mueve el bloque, dentro del lienzo. Nunca lanza (SPEC 11.4)."""
+        return (
+            max(-self.mover_izquierda, min(self.mover_derecha, dx)),
+            max(-self.mover_arriba, min(self.mover_abajo, dy)),
+        )
+
+    def movida(self, dx: int = 0, dy: int = 0) -> "Typography":
+        """La misma tipografia con el bloque en otro sitio.
+
+        Se mueve el bloque ENTERO: izquierda, derecha, techo y base. Asi el
+        ancho y el alto siguen significando lo mismo -- el corte y el tamano no
+        cambian por mover --, y la regla de acento va con el texto porque se
+        dibuja desde `left` y `bottom`.
+        """
+        dx, dy = self.desplazamiento(dx, dy)
+        if not dx and not dy:
+            return self
+        return replace(
+            self,
+            left=self.left + dx,
+            right=self.right + dx,
+            top=self.top + dy,
+            bottom=self.bottom + dy,
+        )
 
     def max_lineas(self, apilado: bool = False, alto: int = 0) -> int:
         """Cuantas lineas se admiten.
@@ -514,9 +572,11 @@ class BackgroundTreatment:
     """
 
     saturation: float = 0.35  # desaturar
-    brightness: float = 0.72  # oscurecer
+    # Sin oscurecer ni vineta desde v12: "elimina la capa de oscuridad". Eran
+    # 0.72 y 0.55, y sobre un fondo de estudio dejaban la foto casi negra.
+    brightness: float = 1.0  # 1 = sin oscurecer
     blur_radius: float = 2.0
-    vignette: float = 0.55  # 0 = sin vineta, 1 = bordes negros
+    vignette: float = 0.0  # 0 = sin vineta, 1 = bordes negros
 
 
 BACKGROUND = BackgroundTreatment()
