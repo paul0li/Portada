@@ -1,4 +1,4 @@
-.PHONY: install install-cutout cutout-model dev serve estado test lint fmt migrate preview clean
+.PHONY: install install-cutout cutout-model dev serve reiniciar estado test lint fmt migrate preview clean
 
 install:
 	uv sync
@@ -21,6 +21,11 @@ dev:
 # abriria el puerto a quien comparta el wifi.
 serve:
 	uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# El agente de launchd corre sin --reload: un cambio de codigo no se ve hasta
+# reiniciarlo. `-k` mata el proceso y lo vuelve a lanzar.
+reiniciar:
+	launchctl kickstart -k gui/$$(id -u)/com.portada.servidor
 
 # Que parte se cayo, en un paso: el servidor, Tailscale o el `serve`.
 estado:

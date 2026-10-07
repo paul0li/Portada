@@ -31,6 +31,7 @@ por Tailscale no hay ni eso: ver «Despliegue».
 | --- | --- |
 | `make dev` | servidor con recarga en `:8000` |
 | `make serve` | el servidor como se usa desde el teléfono: sin recarga, solo en `127.0.0.1` |
+| `make reiniciar` | reinicia el servidor del agente de `launchd`: **después de cada cambio de Python o del `.env`** |
 | `make estado` | qué está arriba: el servidor, Tailscale y el `serve` |
 | `make test` | unit + integración + golden + arquitectura + cobertura de spec |
 | `make lint` / `make fmt` | ruff |
@@ -74,6 +75,23 @@ iPhone (app Tailscale) ──HTTPS──▶ tailscale serve ──▶ uvicorn 12
   puerto sin pasar por Tailscale.
 - **El Mac tiene que estar encendido y despierto.** Si duerme, Portada no
   responde.
+
+### Después de cada cambio de código: reiniciar
+
+El servidor lo mantiene un agente de `launchd` (ver «Que se levante solo», más
+abajo), y corre **sin recarga automática**: lo que cambies en el código no se ve
+en el teléfono hasta reiniciarlo.
+
+```bash
+make reiniciar
+# es lo mismo que: launchctl kickstart -k gui/$(id -u)/com.portada.servidor
+```
+
+Tarda un par de segundos. `make estado` confirma que volvió.
+
+Lo que **pide** reiniciar: el código Python, el `.env` y las migraciones nuevas,
+que se aplican al arrancar. Las plantillas, el CSS y el JS se leen del disco en
+cada página y se ven sin reiniciar; ante la duda, reiniciar no cuesta nada.
 
 ### Montarlo desde cero
 
@@ -172,7 +190,7 @@ Con el agente puesto, `make serve` sobra: el 8000 ya está ocupado.
 
 - Comprobar que está corriendo: `launchctl list | grep portada` (la primera columna es el PID; un `-` con un número al lado es el código con que murió)
 
-- Reiniciarlo después de un cambio de código: `launchctl kickstart -k gui/$(id -u)/com.portada.servidor`
+- Reiniciarlo después de un cambio de código: `make reiniciar`
 - Quitarlo: `launchctl unload ~/Library/LaunchAgents/com.portada.servidor.plist`
 - El log queda en `data/servidor.log`.
 

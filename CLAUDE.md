@@ -238,6 +238,7 @@ Romper una de estas es un bug, no una decisión de diseño.
 ```bash
 make install   # uv sync
 make dev       # uvicorn --reload en :8000
+make reiniciar # tras cambiar Python, .env o migraciones: el servidor real es un agente de launchd sin --reload (README «Despliegue»)
 make test      # unit + integration + golden + arquitectura + cobertura de spec
 make lint      # ruff check + format --check
 make fmt       # arregla lo que se pueda
