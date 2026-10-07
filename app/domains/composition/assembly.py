@@ -5,6 +5,11 @@ Produce DOS imagenes, y la separacion es la tuberia de SPEC 7:
     base   = fondo + objetos + invitado + conductor      (sin logo, sin titulo)
     final  = base + logo + titulo
 
+Y las dos se arman APILANDO CAPAS (ver `capas`): fondo, cada figura, logo,
+titulo y marco, cada una con su sitio. El navegador recibe esas mismas capas para
+mover una figura bajo el dedo, y como el armado no es mas que apilarlas, lo que
+enseña el editor es lo que se descarga por construccion (COMPOSITION-42).
+
 El modelo de acabado, cuando exista, recibe `base` y devuelve una `base`
 mejorada; entonces `reapply` vuelve a pegar logo y titulo encima a fidelidad
 completa. Por eso el logo nunca se reinterpreta (SPEC 11.5) y el titulo siempre
@@ -65,6 +70,10 @@ class Ajuste:
     capa: int = 0
     voltear_x: bool = False
     voltear_y: bool = False
+    # Porcentaje del tamano que le da el slot. Entero y no float: viaja en una
+    # URL, se guarda en SQLite y se hashea, y en los tres sitios 1.0000001 y 1.0
+    # serian dos escalas distintas que dibujan lo mismo.
+    escala: int = 100
 
 
 # "Donde diga el template". Es un singleton y no un `Ajuste()` por llamada para
@@ -107,6 +116,10 @@ class Brief:
     titulo_tamano: int = 0
     titulo_alto: int = 0
     titulo_apilado: bool = False
+    # Donde se movio el bloque entero del titulo (v11), en pixeles del lienzo.
+    # Tambien overlay: mover el titulo no toca lo de abajo.
+    titulo_x: int = 0
+    titulo_y: int = 0
 
     def for_role(self, role: str) -> list[Path]:
         return list(self.photos.get(role, ()))
@@ -129,16 +142,29 @@ class Composition:
 # --- utilidades de imagen ------------------------------------------------
 
 
-def _entre(valor: int, tope: int) -> int:
-    return max(-tope, min(tope, valor))
+def _alto_dibujado(slot: Slot, escala: int) -> int | None:
+    """El alto con el que se dibuja una figura de ese slot, sin abrir la foto.
+
+    Solo se sabe en los slots que fijan el alto (`height`); en los demas lo
+    decide la foto, y por eso esos se apoyan por el centro y no lo necesitan.
+    """
+    return round(slot.height * escala / 100) if slot.height else None
 
 
-def acotar(role: str, ajuste: Ajuste, template: Template = TEMPLATE) -> Ajuste:
+def acotar(
+    role: str, ajuste: Ajuste, template: Template = TEMPLATE, desplazamiento: int = 0
+) -> Ajuste:
     """El mismo ajuste dentro de lo que el template permite para ese rol.
 
     Se acota aqui y no solo en quien lo recibe porque este modulo tiene que
     poder dibujar cualquier brief (SPEC 11.4): un numero absurdo mueve la figura
-    hasta el tope y ya, nunca la saca del cuadro ni lanza.
+    hasta el borde y ya, nunca la saca del cuadro ni lanza.
+
+    "El borde" es que el CENTRO de la figura siga dentro del lienzo (v11). Se
+    calcula con la figura que se DIBUJA -- escalada, y en el sitio que le toca en
+    su grupo (`desplazamiento`) --, no con la del template: una figura al doble
+    tiene el centro el doble de alto. Quien no sabe el desplazamiento (el
+    borrador de una pantalla) acota sin el y deja que `ajuste_de` lo afine.
 
     Mover y voltear no van juntos: el `fondo` se puede voltear y no se puede
     mover, porque va a sangre completa y no hay donde. Por eso son dos listas y
@@ -153,10 +179,18 @@ def acotar(role: str, ajuste: Ajuste, template: Template = TEMPLATE) -> Ajuste:
     limites = template.ajustes
     slot = template.slots[role]
     capa = min(max(slot.z + ajuste.capa, limites.capa_min), limites.capa_max)
+    escala = min(max(ajuste.escala, limites.escala_min), limites.escala_max)
+
+    ancho, alto = template.canvas
+    centro_x = slot.x + desplazamiento
+    centro_y = slot.y
+    if slot.anchor == "bottom-center":
+        centro_y -= (_alto_dibujado(slot, escala) or 0) // 2
     return Ajuste(
-        dx=_entre(ajuste.dx, limites.max_x),
-        dy=_entre(ajuste.dy, limites.max_y),
+        dx=min(max(ajuste.dx, -centro_x), ancho - centro_x),
+        dy=min(max(ajuste.dy, -centro_y), alto - centro_y),
         capa=capa - slot.z,
+        escala=escala,
         **volteos,
     )
 
@@ -172,7 +206,9 @@ def ajuste_de(brief: "Brief", role: str, index: int = 0, template: Template = TE
     """
     pedidos = brief.ajustes.get(role, ())
     pedido = pedidos[index] if index < len(pedidos) else SIN_AJUSTE
-    return acotar(role, pedido, template)
+    slot = template.slots[role]
+    dibujadas = len(brief.for_role(role)[: slot.max_items])
+    return acotar(role, pedido, template, reparto(slot, dibujadas, index))
 
 
 def _z_efectivo(brief: "Brief", role: str, index: int, template: Template) -> int:
@@ -350,170 +386,96 @@ def reparto(slot: Slot, total: int, index: int) -> int:
     return round(centro + (index - (total - 1) / 2) * grupo.separacion)
 
 
-def _paste(
-    canvas: Image.Image,
-    img: Image.Image,
-    slot: Slot,
-    ajuste: Ajuste = SIN_AJUSTE,
-    desplazamiento: int = 0,
-) -> None:
-    """Pega segun el ancla del slot.
+def _destino(slot: Slot, img: Image.Image, ancla: tuple[int, int]) -> tuple[int, int]:
+    """Donde cae la esquina de una imagen para que se apoye en `ancla`.
 
-    `ajuste` empuja el punto de anclaje, no la imagen: el slot sigue decidiendo
-    COMO se apoya la figura (por su base, por su centro), y el episodio solo
-    mueve donde cae ese punto. `desplazamiento` es lo que le toca a esta figura
-    dentro de su grupo (ver `reparto`), y se suma al mismo punto.
+    El slot decide COMO se apoya la figura (por su base, por su centro, por su
+    esquina); el episodio solo mueve el punto. Por eso escalar una figura no la
+    despega del suelo: crece desde donde se apoya.
     """
+    x, y = ancla
     if slot.anchor == "top-left":
-        canvas.alpha_composite(img, (slot.x + ajuste.dx, slot.y + ajuste.dy))
-        return
-
-    x = slot.x + ajuste.dx + desplazamiento
-    y = slot.y + ajuste.dy
+        return x, y
     if slot.anchor == "bottom-center":
-        destino = (x - img.width // 2, y - img.height)
-    else:  # center
-        destino = (x - img.width // 2, y - img.height // 2)
-    canvas.alpha_composite(img, destino)
+        return x - img.width // 2, y - img.height
+    return x - img.width // 2, y - img.height // 2  # center
 
 
-# --- el armado -----------------------------------------------------------
+# --- las capas -----------------------------------------------------------
 
 
-def _draw_base(brief: Brief, template: Template) -> Image.Image:
-    canvas = Image.new("RGBA", template.canvas, (0, 0, 0, 255))
+@dataclass(frozen=True, slots=True)
+class Capa:
+    """Una imagen y su sitio en el lienzo. El armado es apilarlas en orden.
 
-    fondos = brief.for_role("fondo")
-    if fondos:
-        # El fondo no se puede mover -- va a sangre completa -- pero si voltear:
-        # es lo que arregla un fondo cuyo motivo cae justo detras del titulo.
-        fondo = _voltear(_open(fondos[0]), ajuste_de(brief, "fondo", 0, template))
-        canvas.alpha_composite(_treat_background(fondo, template.background, template.canvas))
-    else:
-        canvas.alpha_composite(_gradient(template.canvas, template.palette, brief.degradado))
-
-    # El orden de dibujo sale de la capa EFECTIVA, no del z del template: es lo
-    # que deja que un episodio ponga al invitado delante del conductor sin tocar
-    # el archivo.
-    #
-    # El desempate es el propio empujon, y no solo el z del template, porque el
-    # z de las tres figuras va de uno en uno: con el template desempatando, un
-    # toque de "atras" empataba al conductor con el invitado y NO cambiaba nada
-    # -- hacian falta dos para ver algo, o sea que el primero era un boton que
-    # miente. Empatados, manda quien se movio hacia adelante; a igualdad de
-    # empujon, el template; y entre dos figuras del mismo rol, el orden en que
-    # se eligieron. Es un orden total, asi que el armado sigue siendo
-    # determinista.
-    #
-    # Y se ordenan FIGURAS, no roles: es lo que deja poner al segundo invitado
-    # delante del primero. Mientras el orden fue por rol, "adelante" solo sabia
-    # hablar de los tres bloques.
-    figuras = [
-        (role, index, path)
-        for role in BASE_ROLES
-        if role != "fondo"
-        for index, path in enumerate(brief.for_role(role)[: template.slots[role].max_items])
-    ]
-    cuantas = Counter(role for role, _, _ in figuras)
-
-    for role, index, path in sorted(
-        figuras,
-        key=lambda f: (
-            _z_efectivo(brief, f[0], f[1], template),
-            ajuste_de(brief, f[0], f[1], template).capa,
-            template.slots[f[0]].z,
-            f[1],
-        ),
-    ):
-        slot = template.slots[role]
-        ajuste = ajuste_de(brief, role, index, template)
-        # Se recorta al sujeto ANTES de escalar: el slot mide la persona.
-        img = _trim_alpha(_voltear(_open(path), ajuste))
-        if slot.height:
-            img = _scale_to_height(img, slot.height)
-        if slot.max_height or slot.max_width:
-            img = _fit_within(
-                img, slot.max_width or template.canvas[0], slot.max_height or template.canvas[1]
-            )
-        if slot.shadow:
-            img = _with_shadow(img, template.palette)
-        _paste(canvas, img, slot, ajuste, reparto(slot, cuantas[role], index))
-
-    return canvas
-
-
-def _draw_overlay(canvas: Image.Image, brief: Brief, template: Template):
-    """Logo, titulo y marco sobre una base. Modifica `canvas` en el sitio.
-
-    Los tres son mobiliario de marca y van en el overlay, no en la base: igual
-    que el logo y el titulo, el marco no puede pasar nunca por un modelo
-    (SPEC 11.5). El modelo recibe la base y nada de esto.
+    `nombre` es `fondo`, `logo`, `titulo`, `marco`, o `rol.posicion` para una
+    figura (`invitado.1`). `ancla` solo la tienen las figuras: es el punto en el
+    que se apoyan, y desde el que el navegador las escala sin preguntar nada.
     """
-    logos = brief.for_role("logo")
-    if logos:
-        slot = template.slots["logo"]
-        logo = _fit_within(_open(logos[0]), slot.max_width or 200, slot.max_height or 90)
-        _paste(canvas, logo, slot)
 
-    puesto = typography.draw_title(
-        canvas,
-        brief.title,
-        template.typography,
-        template.palette,
-        brief.titulo_ancho,
-        brief.titulo_apilado,
-        brief.titulo_tamano,
-        brief.titulo_alto,
-    )
-
-    # El marco se dibuja el ULTIMO y a sangre completa: es la ventana por la que
-    # se ve todo lo demas, asi que va por encima incluso del titulo.
-    marcos = brief.for_role("marco")
-    if marcos:
-        canvas.alpha_composite(_cover_fit(_open(marcos[0]), template.canvas))
-
-    return puesto
+    nombre: str
+    imagen: Image.Image
+    x: int
+    y: int
+    ancla: tuple[int, int] | None = None
+    # Como se apoya en `ancla`: por la base o por el centro. Lo dice el slot, y
+    # viaja con la capa para que nadie fuera de aqui tenga que leer el template.
+    apoyo: str | None = None
+    # El ajuste EFECTIVO de la figura o del fondo: el que se dibujo, ya acotado
+    # con su sitio en el grupo. Es del que tiene que partir quien la arrastra;
+    # partir del pedido daria una zona muerta junto a los bordes.
+    ajuste: "Ajuste | None" = None
+    # Solo el titulo: el tamano de letra con el que salio DE VERDAD. Con el
+    # tamano en automatico es el que eligio el auto-ajuste, y es desde donde la
+    # esquina del lienzo empieza a agrandar.
+    tamano: int | None = None
+    # Solo las figuras: el nombre del archivo del que salio. Como los medios se
+    # direccionan por contenido, es su hash: cambia cuando cambia la foto -- por
+    # ejemplo al quitarle el fondo --, y por eso sirve de version en su URL.
+    fuente: str | None = None
 
 
-class CacheDeBases:
-    """Las ultimas bases dibujadas, en memoria.
+class CacheDeImagenes:
+    """Las ultimas imagenes dibujadas, en memoria.
 
     Existe por una sola razon: dibujar la base cuesta ~215 ms y repintar el
     overlay cuesta ~21 ms. Sin esto, escribir el titulo con el preview delante
-    recompondria el fondo, los recortes y la vineta en cada tecla.
+    recompondria el fondo, los recortes y la vineta en cada tecla. Y desde v11
+    hay una segunda: el lienzo pide las figuras de una en una, y recortar y
+    escalar una foto real es la parte cara de cada una.
 
     Es explicita y no un `@lru_cache` a proposito: asi se puede vaciar en un
     test y se puede MIRAR si hubo acierto, que es lo que hace comprobable a
     COMPOSITION-22 en vez de una intencion.
 
-    La clave es el checksum de la base, que se calcula con los NOMBRES de los
-    archivos. Funciona por lo mismo que `brief_checksum`: los medios se
-    direccionan por contenido, asi que el nombre de un archivo ya es el hash de
-    lo que contiene. Fuera de esa regla -- un archivo que cambia sin cambiar de
-    nombre -- esta cache serviria pixeles viejos.
+    Las claves se calculan con los NOMBRES de los archivos. Funciona por lo
+    mismo que `brief_checksum`: los medios se direccionan por contenido, asi que
+    el nombre de un archivo ya es el hash de lo que contiene. Fuera de esa regla
+    -- un archivo que cambia sin cambiar de nombre -- esta cache serviria
+    pixeles viejos.
     """
 
     def __init__(self, maxsize: int = 8) -> None:
         # Una base RGBA de 1280x720 son ~3,7 MB: ocho caben de sobra en la
         # unica instancia que hay, y no hay una novena que valga la pena.
         self.maxsize = maxsize
-        # Cuantas veces hubo que componer de verdad, EN TODA LA VIDA del
-        # proceso: solo sube, y `clear` no lo toca. Si se reseteara, vaciar la
-        # cache seria invisible para quien vigila los aciertos -- y un `clear`
-        # de mas escondido en una ruta es justo el bug que hay que poder ver.
-        # Quien mida, mide diferencias.
+        # Cuantas veces hubo que dibujar de verdad, EN TODA LA VIDA del proceso:
+        # solo sube, y `clear` no lo toca. Si se reseteara, vaciar la cache
+        # seria invisible para quien vigila los aciertos -- y un `clear` de mas
+        # escondido en una ruta es justo el bug que hay que poder ver. Quien
+        # mida, mide diferencias.
         self.dibujadas = 0
         self._entradas: OrderedDict[str, Image.Image] = OrderedDict()
 
     def clear(self) -> None:
-        """Vacia las bases guardadas. No toca el contador (ver arriba)."""
+        """Vacia las imagenes guardadas. No toca el contador (ver arriba)."""
         self._entradas.clear()
 
     def __len__(self) -> int:
         return len(self._entradas)
 
     def obtener(self, clave: str, dibujar: Callable[[], Image.Image]) -> Image.Image:
-        """La base de esa clave. Devuelve una COPIA: quien la recibe la pinta."""
+        """La imagen de esa clave. Devuelve una COPIA: quien la recibe la pinta."""
         guardada = self._entradas.get(clave)
         if guardada is None:
             guardada = dibujar()
@@ -526,7 +488,228 @@ class CacheDeBases:
         return guardada.copy()
 
 
-BASES = CacheDeBases()
+# Las figuras ya recortadas, volteadas y escaladas. 32 porque una semana de
+# trabajo son unas pocas fotos con unas pocas escalas, y cada una pesa menos
+# que una base.
+FIGURAS = CacheDeImagenes(maxsize=32)
+FONDOS = CacheDeImagenes(maxsize=8)
+
+
+def _dibujar_figura(path: Path, slot: Slot, ajuste: Ajuste, template: Template) -> Image.Image:
+    # Se recorta al sujeto ANTES de escalar: el slot mide la persona.
+    img = _trim_alpha(_voltear(_open(path), ajuste))
+    if slot.height:
+        # Desde la foto y no desde la figura ya escalada: una sola pasada de
+        # LANCZOS, y en 100 exactamente la misma que antes de que hubiera escala.
+        img = _scale_to_height(img, _alto_dibujado(slot, ajuste.escala) or slot.height)
+    if slot.max_height or slot.max_width:
+        img = _fit_within(
+            img, slot.max_width or template.canvas[0], slot.max_height or template.canvas[1]
+        )
+        if ajuste.escala != 100 and not slot.height:
+            # La caja del slot no amplia (SPEC 11.5: nunca deformar, y tampoco
+            # inventar resolucion), asi que la escala va despues, sobre lo que
+            # cupo. Es la escala de lo que el template dibujaba, que es lo que
+            # el porcentaje dice.
+            img = img.resize(
+                (
+                    max(1, round(img.width * ajuste.escala / 100)),
+                    max(1, round(img.height * ajuste.escala / 100)),
+                ),
+                Image.LANCZOS,
+            )
+    if slot.shadow:
+        img = _with_shadow(img, template.palette)
+    return img
+
+
+def figura(path: Path, role: str, ajuste: Ajuste = SIN_AJUSTE, template: Template = TEMPLATE):
+    """La imagen de UNA figura como se dibuja: sin sitio, solo la imagen.
+
+    Depende de la foto, del rol, de la escala y de los volteos -- no de donde se
+    ponga --, y por eso la clave de la cache no lleva `dx` ni `dy`: arrastrar una
+    figura por el lienzo no vuelve a recortar nada.
+    """
+    slot = template.slots[role]
+    ajuste = acotar(role, ajuste, template)
+    clave = (
+        f"{Path(path).name}:{role}:{ajuste.escala}:{int(ajuste.voltear_x)}:{int(ajuste.voltear_y)}"
+        f":v{template.version}"
+    )
+    return FIGURAS.obtener(clave, lambda: _dibujar_figura(Path(path), slot, ajuste, template))
+
+
+def _capa_fondo(brief: Brief, template: Template) -> Capa:
+    fondos = brief.for_role("fondo")
+    if not fondos:
+        return Capa("fondo", _gradient(template.canvas, template.palette, brief.degradado), 0, 0)
+    # El fondo no se puede mover -- va a sangre completa -- pero si voltear:
+    # es lo que arregla un fondo cuyo motivo cae justo detras del titulo.
+    ajuste = ajuste_de(brief, "fondo", 0, template)
+    clave = f"{Path(fondos[0]).name}:{int(ajuste.voltear_x)}:{int(ajuste.voltear_y)}"
+    clave += f":v{template.version}"
+    imagen = FONDOS.obtener(
+        clave,
+        lambda: _treat_background(
+            _voltear(_open(fondos[0]), ajuste), template.background, template.canvas
+        ),
+    )
+    return Capa("fondo", imagen, 0, 0, ajuste=ajuste)
+
+
+def _capas_figuras(brief: Brief, template: Template) -> list[Capa]:
+    """Las figuras, en orden de dibujo.
+
+    El orden sale de la capa EFECTIVA, no del z del template: es lo que deja que
+    un episodio ponga al invitado delante del conductor sin tocar el archivo.
+
+    El desempate es el propio empujon, y no solo el z del template, porque el z
+    de las tres figuras va de uno en uno: con el template desempatando, un toque
+    de "atras" empataba al conductor con el invitado y NO cambiaba nada -- hacian
+    falta dos para ver algo, o sea que el primero era un boton que miente.
+    Empatados, manda quien se movio hacia adelante; a igualdad de empujon, el
+    template; y entre dos figuras del mismo rol, el orden en que se eligieron.
+    Es un orden total, asi que el armado sigue siendo determinista.
+
+    Y se ordenan FIGURAS, no roles: es lo que deja poner al segundo invitado
+    delante del primero.
+    """
+    figuras = [
+        (role, index, path)
+        for role in BASE_ROLES
+        if role != "fondo"
+        for index, path in enumerate(brief.for_role(role)[: template.slots[role].max_items])
+    ]
+    cuantas = Counter(role for role, _, _ in figuras)
+
+    capas = []
+    for role, index, path in sorted(
+        figuras,
+        key=lambda f: (
+            _z_efectivo(brief, f[0], f[1], template),
+            ajuste_de(brief, f[0], f[1], template).capa,
+            template.slots[f[0]].z,
+            f[1],
+        ),
+    ):
+        slot = template.slots[role]
+        ajuste = ajuste_de(brief, role, index, template)
+        img = figura(path, role, ajuste, template)
+        ancla = (slot.x + ajuste.dx + reparto(slot, cuantas[role], index), slot.y + ajuste.dy)
+        capas.append(
+            Capa(
+                f"{role}.{index}",
+                img,
+                *_destino(slot, img, ancla),
+                ancla=ancla,
+                apoyo=slot.anchor,
+                ajuste=ajuste,
+                fuente=Path(path).name,
+            )
+        )
+    return capas
+
+
+def _capa_logo(brief: Brief, template: Template) -> Capa | None:
+    logos = brief.for_role("logo")
+    if not logos:
+        return None
+    slot = template.slots["logo"]
+    logo = _fit_within(_open(logos[0]), slot.max_width or 200, slot.max_height or 90)
+    return Capa("logo", logo, *_destino(slot, logo, (slot.x, slot.y)))
+
+
+def _capa_titulo(brief: Brief, template: Template):
+    """El titulo como capa, y como se puso.
+
+    Se dibuja en un lienzo transparente y se recorta a lo que tiene tinta: asi es
+    una capa que se puede arrastrar, y no un repintado.
+    """
+    lienzo = Image.new("RGBA", template.canvas, (0, 0, 0, 0))
+    puesto = typography.draw_title(
+        lienzo,
+        brief.title,
+        template.typography.movida(brief.titulo_x, brief.titulo_y),
+        template.palette,
+        brief.titulo_ancho,
+        brief.titulo_apilado,
+        brief.titulo_tamano,
+        brief.titulo_alto,
+    )
+    caja = lienzo.getbbox()
+    capa = Capa("titulo", lienzo.crop(caja), caja[0], caja[1], tamano=puesto.size) if caja else None
+    return capa, puesto
+
+
+def _capa_marco(brief: Brief, template: Template) -> Capa | None:
+    # El marco va el ULTIMO y a sangre completa: es la ventana por la que se ve
+    # todo lo demas, asi que va por encima incluso del titulo.
+    marcos = brief.for_role("marco")
+    if not marcos:
+        return None
+    return Capa("marco", _cover_fit(_open(marcos[0]), template.canvas), 0, 0)
+
+
+def _capas_overlay(brief: Brief, template: Template):
+    """Logo, titulo y marco, en ese orden. Devuelve tambien como se puso el titulo.
+
+    Los tres son mobiliario de marca y van en el overlay, no en la base: igual
+    que el logo y el titulo, el marco no puede pasar nunca por un modelo
+    (SPEC 11.5). El modelo recibe la base y nada de esto.
+    """
+    titulo, puesto = _capa_titulo(brief, template)
+    capas = [_capa_logo(brief, template), titulo, _capa_marco(brief, template)]
+    return [c for c in capas if c is not None], puesto
+
+
+def _apilar(canvas: Image.Image, capas: Sequence[Capa]) -> Image.Image:
+    for capa in capas:
+        canvas.alpha_composite(capa.imagen, (capa.x, capa.y))
+    return canvas
+
+
+def _draw_base(brief: Brief, template: Template) -> Image.Image:
+    canvas = Image.new("RGBA", template.canvas, (0, 0, 0, 255))
+    return _apilar(canvas, [_capa_fondo(brief, template), *_capas_figuras(brief, template)])
+
+
+def _draw_overlay(canvas: Image.Image, brief: Brief, template: Template):
+    """Logo, titulo y marco sobre una base. Modifica `canvas` en el sitio."""
+    capas, puesto = _capas_overlay(brief, template)
+    _apilar(canvas, capas)
+    return puesto
+
+
+def capas(brief: Brief, template: Template = TEMPLATE) -> list[Capa]:
+    """El armado sin apilar: lo que el navegador necesita para mover cosas.
+
+    No es otra implementacion: `compose` es exactamente apilar esto, asi que lo
+    que el editor ensena y lo que se descarga no pueden separarse
+    (COMPOSITION-42).
+    """
+    overlay, _ = _capas_overlay(brief, template)
+    return [_capa_fondo(brief, template), *_capas_figuras(brief, template), *overlay]
+
+
+def capa(brief: Brief, nombre: str, template: Template = TEMPLATE) -> Capa | None:
+    """UNA capa de `capas`, dibujando solo esa.
+
+    Es lo que sirve el navegador imagen por imagen: pedir una figura no puede
+    costar el titulo, el marco y el fondo. Un nombre que no existe en este brief
+    es `None`, no un error (SPEC 11.4).
+    """
+    if nombre == "fondo":
+        return _capa_fondo(brief, template)
+    if nombre == "logo":
+        return _capa_logo(brief, template)
+    if nombre == "titulo":
+        return _capa_titulo(brief, template)[0]
+    if nombre == "marco":
+        return _capa_marco(brief, template)
+    return next((c for c in _capas_figuras(brief, template) if c.nombre == nombre), None)
+
+
+BASES = CacheDeImagenes()
 
 
 def _to_jpeg(img: Image.Image, quality: int = PREVIEW_QUALITY) -> bytes:
@@ -541,6 +724,26 @@ def _to_png(img: Image.Image) -> bytes:
     # descarga una vez. `compress_level` fijo mantiene la salida reproducible.
     img.convert("RGB").save(buffer, format="PNG", optimize=False, compress_level=6)
     return buffer.getvalue()
+
+
+def entregar(capa: Capa, template: Template = TEMPLATE) -> tuple[bytes, str]:
+    """Una capa como se sirve al navegador: a la escala del preview.
+
+    A la mitad de lado por lo mismo que el preview: el lienzo se mira en un
+    telefono, y a 1280 cada figura pesaria cuatro veces mas para no verse mejor.
+    El fondo es opaco y a sangre completa, asi que va en JPEG; lo demas lleva
+    alfa y va en PNG, con la compresion mas rapida -- se sirve, no se archiva.
+    """
+    factor = PREVIEW_SIZE[0] / template.canvas[0]
+    img = capa.imagen.resize(
+        (max(1, round(capa.imagen.width * factor)), max(1, round(capa.imagen.height * factor))),
+        Image.LANCZOS,
+    )
+    if capa.nombre == "fondo":
+        return _to_jpeg(img), "image/jpeg"
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", compress_level=1)
+    return buffer.getvalue(), "image/png"
 
 
 def compose(brief: Brief, template: Template = TEMPLATE) -> Composition:
@@ -622,7 +825,7 @@ def _huella_de_ajustes(digest, brief: Brief, template: Template) -> None:
                 continue
             digest.update(
                 f"\najuste:{role}.{index}={ajuste.dx},{ajuste.dy},{ajuste.capa}"
-                f",{int(ajuste.voltear_x)},{int(ajuste.voltear_y)}".encode()
+                f",{int(ajuste.voltear_x)},{int(ajuste.voltear_y)},{ajuste.escala}".encode()
             )
 
 
@@ -682,6 +885,9 @@ def brief_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
     digest.update(f"\ntamano={template.typography.tamano(brief.titulo_tamano)}".encode())
     digest.update(f"\nalto={template.typography.techo(brief.titulo_alto)}".encode())
     digest.update(f"\napilado={int(brief.titulo_apilado)}".encode())
+    # El desplazamiento ya acotado, por lo mismo que el resto: el efecto.
+    movido = template.typography.desplazamiento(brief.titulo_x, brief.titulo_y)
+    digest.update(f"\nmovido={movido[0]},{movido[1]}".encode())
     digest.update(f"\ndegradado={brief.degradado}".encode())
     _huella_de_ajustes(digest, brief, template)
     _huella_de_fotos(digest, brief, brief.photos)

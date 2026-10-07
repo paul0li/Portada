@@ -28,6 +28,9 @@ class Episode:
     titulo_tamano: int
     titulo_alto: int
     titulo_apilado: bool
+    # Cuanto se movio el bloque entero del titulo en el lienzo (v11). Overlay.
+    titulo_x: int
+    titulo_y: int
     created_at: str
     deleted_at: str | None
     slots: dict[str, list[str]] = field(default_factory=dict)  # rol -> photo_ids
@@ -77,16 +80,16 @@ def _ajustes(conn: sqlite3.Connection, episode_id: str) -> dict[str, list[compos
     lo que significa no tener fila.
     """
     rows = conn.execute(
-        "SELECT role, posicion, dx, dy, capa, voltear_x, voltear_y FROM episodes_ajustes "
+        "SELECT role, posicion, dx, dy, capa, voltear_x, voltear_y, escala FROM episodes_ajustes "
         "WHERE episode_id = ? ORDER BY role, posicion",
         (episode_id,),
     )
     puestos: dict[str, list[composition.Ajuste]] = {}
-    for role, posicion, dx, dy, capa, vx, vy in rows:
+    for role, posicion, dx, dy, capa, vx, vy, escala in rows:
         figuras = puestos.setdefault(role, [])
         figuras.extend([composition.SIN_AJUSTE] * (posicion + 1 - len(figuras)))
         figuras[posicion] = composition.Ajuste(
-            dx=dx, dy=dy, capa=capa, voltear_x=bool(vx), voltear_y=bool(vy)
+            dx=dx, dy=dy, capa=capa, voltear_x=bool(vx), voltear_y=bool(vy), escala=escala
         )
     return puestos
 
@@ -103,6 +106,8 @@ def insert(
     titulo_alto: int,
     titulo_apilado: bool,
     selection: dict[str, list[str]],
+    titulo_x: int = 0,
+    titulo_y: int = 0,
     ajustes: dict[str, list[composition.Ajuste]] | None = None,
 ) -> Episode:
     episode_id = new_id()
@@ -110,8 +115,8 @@ def insert(
     conn.execute(
         "INSERT INTO episodes_jobs "
         "(id, user_id, title, strength, degradado, titulo_ancho, titulo_tamano, "
-        "titulo_alto, titulo_apilado, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "titulo_alto, titulo_apilado, titulo_x, titulo_y, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             episode_id,
             user_id,
@@ -122,6 +127,8 @@ def insert(
             titulo_tamano,
             titulo_alto,
             int(titulo_apilado),
+            titulo_x,
+            titulo_y,
             creado,
         ),
     )
@@ -129,8 +136,8 @@ def insert(
     # escriben, y por eso `_ajustes` rellena los huecos al leer.
     conn.executemany(
         "INSERT INTO episodes_ajustes "
-        "(episode_id, role, posicion, dx, dy, capa, voltear_x, voltear_y) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(episode_id, role, posicion, dx, dy, capa, voltear_x, voltear_y, escala) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 episode_id,
@@ -141,6 +148,7 @@ def insert(
                 ajuste.capa,
                 int(ajuste.voltear_x),
                 int(ajuste.voltear_y),
+                ajuste.escala,
             )
             for role, figuras in (ajustes or {}).items()
             for posicion, ajuste in enumerate(figuras)
@@ -165,6 +173,8 @@ def insert(
         titulo_tamano=titulo_tamano,
         titulo_alto=titulo_alto,
         titulo_apilado=titulo_apilado,
+        titulo_x=titulo_x,
+        titulo_y=titulo_y,
         created_at=creado,
         deleted_at=None,
         slots=selection,

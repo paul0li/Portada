@@ -468,6 +468,48 @@ def test_episodes_22_el_episodio_recuerda_como_se_puso_el_titulo(logged_in, imag
     assert desmedido.json()["titulo_alto"] == episodes.TIPOGRAFIA.alto_mas
 
 
+def test_episodes_23_el_episodio_recuerda_escala_y_sitio_del_titulo(logged_in, imagen):
+    """Lo que se hace en el lienzo -- escalar una figura, mover el titulo -- viaja
+    con el episodio hasta los pixeles, y se guarda acotado."""
+    from app.domains.composition import api as composition
+
+    seleccion = {"conductor": _foto(logged_in, imagen, "conductor")}
+
+    def _png(respuesta):
+        episode_id = respuesta.json()["id"]
+        assert logged_in.post(f"/episodes/{episode_id}/assembly").status_code == 201
+        return logged_in.get(f"/episodes/{episode_id}/assembly/file").content
+
+    normal = _crear(logged_in, seleccion)
+    escalado = _crear(logged_in, seleccion, ajustes={"conductor": {"escala": 60}})
+    movido = _crear(logged_in, seleccion, titulo_x=300, titulo_y=-120)
+
+    assert escalado.status_code == 201, escalado.text
+    assert escalado.json()["ajustes"]["conductor"][0]["escala"] == 60
+    assert movido.json()["titulo_x"] == 300 and movido.json()["titulo_y"] == -120
+    assert normal.json()["titulo_x"] == 0 and normal.json()["titulo_y"] == 0
+
+    assert _png(escalado) != _png(normal), "la escala no llegó a la miniatura"
+    assert _png(movido) != _png(normal), "mover el título no llegó a la miniatura"
+
+    # Desmedido se guarda acotado: la fila dice lo que se dibuja.
+    desmedido = _crear(
+        logged_in,
+        seleccion,
+        ajustes={"conductor": {"escala": 99999}},
+        titulo_x=99999,
+        titulo_y=-99999,
+    )
+    assert desmedido.status_code == 201, desmedido.text
+    assert desmedido.json()["ajustes"]["conductor"][0]["escala"] == composition.AJUSTES.escala_max
+    tope = composition.TIPOGRAFIA.desplazamiento(99999, -99999)
+    assert (desmedido.json()["titulo_x"], desmedido.json()["titulo_y"]) == tope
+
+    # Escalar lo que no se mueve es 422, como empujarlo.
+    marco = _crear(logged_in, seleccion, ajustes={"fondo": {"escala": 150}})
+    assert marco.status_code == 422
+
+
 def test_episodes_17_el_episodio_recuerda_su_fondo_por_defecto(logged_in, imagen):
     """El fondo claro u oscuro viaja con el episodio hasta los pixeles.
 
@@ -536,7 +578,8 @@ def test_episodes_18_el_episodio_recuerda_los_ajustes(logged_in, imagen):
     from app.domains.composition import api as composition
 
     desmedido = _crear(logged_in, fotos, ajustes={"conductor": {"dx": 99999}})
-    assert desmedido.json()["ajustes"]["conductor"][0]["dx"] == composition.AJUSTES.max_x
+    tope = composition.acotar("conductor", composition.Ajuste(dx=99999)).dx
+    assert desmedido.json()["ajustes"]["conductor"][0]["dx"] == tope
 
     # Un ajuste que no mueve nada no deja rastro: pedirlo en cero es no pedirlo.
     en_cero = _crear(logged_in, fotos, ajustes={"conductor": {"dx": 0}})

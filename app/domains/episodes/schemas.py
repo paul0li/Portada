@@ -22,6 +22,8 @@ class AjusteIn(BaseModel):
     # por derecha. Ver `composition.Ajuste`.
     voltear_x: bool = False
     voltear_y: bool = False
+    # Porcentaje del tamaño que da el template. 100 es no escalar.
+    escala: int = 100
 
     def a_ajuste(self) -> composition.Ajuste:
         return composition.Ajuste(
@@ -30,6 +32,7 @@ class AjusteIn(BaseModel):
             capa=self.capa,
             voltear_x=self.voltear_x,
             voltear_y=self.voltear_y,
+            escala=self.escala,
         )
 
 
@@ -52,6 +55,10 @@ class CreateEpisode(BaseModel):
     titulo_tamano: int = 0
     titulo_alto: int = 0
     titulo_apilado: bool = False
+    # Cuánto se movió el bloque entero del título en el lienzo (v11). Se acota
+    # contra el lienzo en vez de rechazarse, como todo lo del título.
+    titulo_x: int = 0
+    titulo_y: int = 0
     # rol -> un ajuste por FIGURA, en el orden de sus fotos. Se acepta uno
     # suelto o una lista, igual que `selection`: el caso normal es un rol con
     # una figura, y pedirle una lista de uno sería ceremonia.
@@ -92,6 +99,8 @@ class EpisodeOut(BaseModel):
     titulo_tamano: int = 0
     titulo_alto: int = 0
     titulo_apilado: bool = False
+    titulo_x: int = 0
+    titulo_y: int = 0
     # Solo los roles ajustados, y con los valores ya acotados: lo que se dibuja.
     # Siempre una lista, aunque entre suelto: a la salida no hay dos formas.
     ajustes: dict[str, list[AjusteIn]] = Field(default_factory=dict)

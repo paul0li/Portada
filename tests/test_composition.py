@@ -148,28 +148,109 @@ def test_composition_27_un_ajuste_mueve_la_figura_y_su_capa(fotos):
 
 def test_composition_28_un_ajuste_desmedido_se_acota(fotos):
     """SPEC 11.4: el armado siempre es salida valida. Un numero absurdo mueve
-    hasta el tope y ya -- nunca saca la figura del cuadro ni lanza."""
+    hasta el borde y ya -- nunca saca la figura del cuadro ni lanza.
+
+    "El borde" es que el CENTRO de la figura siga dentro del lienzo. No hay
+    pasos ni topes fijos (v11): moverla es libre, perderla no.
+    """
     limites = template.AJUSTES
+    ancho, alto = template.CANVAS
+    slot = template.SLOTS["conductor"]
 
     def _con(ajuste):
         return composition.Brief(
             photos={"conductor": [fotos["conductor"]]}, ajustes={"conductor": [ajuste]}
         )
 
-    desmedido = _con(composition.Ajuste(dx=99999, dy=-99999, capa=99))
-    en_el_tope = _con(composition.Ajuste(dx=limites.max_x, dy=-limites.max_y, capa=99))
+    acotado = composition.acotar("conductor", composition.Ajuste(dx=99999, dy=-99999, capa=99))
+    # El conductor se apoya por la base: su centro esta media altura por encima.
+    assert slot.x + acotado.dx == ancho
+    assert slot.y - slot.height // 2 + acotado.dy == 0
 
-    assert composition.compose(desmedido).final == composition.compose(en_el_tope).final
+    desmedido = _con(composition.Ajuste(dx=99999, dy=-99999, capa=99))
+    en_el_borde = _con(composition.Ajuste(dx=acotado.dx, dy=acotado.dy, capa=99))
+    assert composition.compose(desmedido).final == composition.compose(en_el_borde).final
+
+    # Ningun paso: un pixel es un movimiento valido.
+    assert composition.acotar("conductor", composition.Ajuste(dx=7, dy=-3)).dx == 7
+
+    # Escalada al doble mide 1120 de alto, asi que su centro sube con ella: el
+    # borde se calcula con la figura que se DIBUJA, no con la del template.
+    grande = composition.acotar("conductor", composition.Ajuste(dy=-99999, escala=200))
+    assert slot.y - slot.height + grande.dy == 0
+
+    # Y con el sitio que le toca en el grupo: el primero de dos invitados no
+    # empieza donde dice el slot, asi que su borde tampoco.
+    dos = composition.Brief(
+        photos={"invitado": [fotos["invitado"], fotos["invitado_b"]]},
+        ajustes={"invitado": [composition.Ajuste(dx=-99999)]},
+    )
+    invitado = template.SLOTS["invitado"]
+    primero = composition.ajuste_de(dos, "invitado", 0)
+    assert invitado.x + assembly.reparto(invitado, 2, 0) + primero.dx == 0
 
     # Y la capa no deja esconder la figura bajo el fondo ni ponerla sobre el
     # titulo: el z efectivo se queda entre los dos.
-    slot_z = template.SLOTS["conductor"].z
     for pedida, esperada in ((99, limites.capa_max), (-99, limites.capa_min)):
         acotado = composition.acotar("conductor", composition.Ajuste(capa=pedida))
-        assert slot_z + acotado.capa == esperada
+        assert slot.z + acotado.capa == esperada
 
     # Un rol que no se mueve no se mueve, se pida lo que se pida.
     assert composition.acotar("marco", composition.Ajuste(dx=200)) == composition.SIN_AJUSTE
+    assert composition.acotar("fondo", composition.Ajuste(escala=150)) == composition.SIN_AJUSTE
+
+
+def test_composition_40_una_figura_se_puede_escalar(fotos):
+    """La escala es un porcentaje del tamano que da el template, y la figura
+    sigue apoyada en su punto: el conductor por la base, un objeto por el centro.
+    """
+    slot = template.SLOTS["conductor"]
+
+    def _base(**ajuste):
+        brief = composition.Brief(
+            photos={"conductor": [fotos["conductor"]]},
+            ajustes={"conductor": [composition.Ajuste(**ajuste)]},
+        )
+        return brief, _abrir(composition.compose(brief).base)
+
+    quieto, normal = _base()
+    _, chico = _base(escala=50)
+    rojo = (255, 0, 0)
+
+    # A la mitad mide 280: la cabeza baja, los pies se quedan donde estaban.
+    cabeza_normal = slot.y - slot.height + 10
+    cabeza_chica = slot.y - slot.height // 2 + 10
+    assert normal.getpixel((slot.x, cabeza_normal)) == rojo
+    assert chico.getpixel((slot.x, cabeza_normal)) != rojo, "escalar no achico la figura"
+    assert chico.getpixel((slot.x, cabeza_chica)) == rojo
+    assert chico.getpixel((slot.x, slot.y - 5)) == rojo, "achicar levanto los pies del suelo"
+
+    # En 100 no hay ajuste: mismos bytes y mismo checksum.
+    cien, _ = _base(escala=100)
+    sin_ajuste = composition.Brief(photos={"conductor": [fotos["conductor"]]})
+    assert composition.compose(cien).final == composition.compose(sin_ajuste).final
+    assert composition.base_checksum(cien) == composition.base_checksum(sin_ajuste)
+
+    # Escalar invalida la base: la figura esta debajo del titulo.
+    escalado, _ = _base(escala=50)
+    assert composition.base_checksum(escalado) != composition.base_checksum(quieto)
+
+    # Fuera del rango se acota, no se rompe.
+    limites = template.AJUSTES
+    for pedida, esperada in ((9999, limites.escala_max), (1, limites.escala_min)):
+        assert composition.acotar("conductor", composition.Ajuste(escala=pedida)).escala == esperada
+
+    # Un objeto se apoya por el centro: escalado, su centro no se mueve.
+    objeto = template.SLOTS["objeto"]
+    amarillo = (255, 255, 0)
+    con_objeto = composition.Brief(
+        photos={"objeto": [fotos["objeto"]]},
+        ajustes={"objeto": [composition.Ajuste(escala=150)]},
+    )
+    grande = _abrir(composition.compose(con_objeto).base)
+    assert grande.getpixel((objeto.x, objeto.y)) == amarillo
+    # A 150 mide 300: a 130 px del centro sigue siendo objeto, y a 100 no lo era.
+    assert grande.getpixel((objeto.x, objeto.y - 130)) == amarillo
 
 
 def test_composition_29_los_ajustes_van_en_el_checksum_de_la_base(fotos):
@@ -192,9 +273,9 @@ def test_composition_29_los_ajustes_van_en_el_checksum_de_la_base(fotos):
         quieto
     )
 
-    # Y dos empujones desmedidos que acaban en el mismo tope tampoco se
+    # Y dos empujones desmedidos que acaban en el mismo borde tampoco se
     # distinguen: se hashea el efecto, no lo pedido.
-    tope = template.AJUSTES.max_x
+    tope = composition.acotar("conductor", composition.Ajuste(dx=99999)).dx
     assert composition.base_checksum(_con(composition.Ajuste(dx=tope + 500))) == (
         composition.base_checksum(_con(composition.Ajuste(dx=tope)))
     )
@@ -594,6 +675,45 @@ def test_composition_38_con_el_tamano_puesto_mandan_los_mandos(fotos):
     )
 
 
+def test_composition_41_el_titulo_se_puede_mover(fotos):
+    """El bloque entero se mueve: texto, techo y regla. Ni el corte ni el tamano
+    cambian, y la base tampoco -- el titulo es overlay."""
+    tipografia = template.TYPOGRAPHY
+    acento = template.PALETTE.accent
+    quieto = _brief(fotos, title="NADIE LO VIO VENIR", conductor=1)
+
+    def _movido(dx, dy):
+        return composition.Brief(title=quieto.title, photos=quieto.photos, titulo_x=dx, titulo_y=dy)
+
+    movido = _movido(400, -200)
+    antes, despues = composition.compose(quieto), composition.compose(movido)
+
+    regla = (tipografia.left + 20, tipografia.bottom + tipografia.rule_gap + 5)
+    assert _abrir(antes.final).getpixel(regla) == acento
+    assert _abrir(despues.final).getpixel((regla[0] + 400, regla[1] - 200)) == acento
+    assert _abrir(despues.final).getpixel(regla) != acento, "la regla se quedo donde estaba"
+
+    # Mismo corte, mismo tamano: mover no es reinterpretar.
+    assert despues.title_size == antes.title_size
+    assert typography.layout(quieto.title, tipografia.movida(400, -200)) == typography.layout(
+        quieto.title, tipografia
+    )
+
+    # Overlay: no toca la base, si el armado.
+    assert composition.base_checksum(movido) == composition.base_checksum(quieto)
+    assert composition.brief_checksum(movido) != composition.brief_checksum(quieto)
+
+    # Desmedido se acota: el bloque no se va del lienzo.
+    tope = tipografia.desplazamiento(99999, 99999)
+    assert tipografia.left + tope[0] + tipografia.rule_width == template.CANVAS[0]
+    regla_abajo = tipografia.bottom + tope[1] + tipografia.rule_gap + tipografia.rule_height
+    assert regla_abajo == template.CANVAS[1]
+    assert composition.compose(_movido(99999, 99999)).final == (
+        composition.compose(_movido(*tope)).final
+    )
+    assert tipografia.desplazamiento(-99999, 0)[0] == -tipografia.left
+
+
 def test_composition_39_el_bloque_del_titulo_puede_ser_mas_alto(fotos):
     """El techo sube y baja; el título sigue apoyado donde dice el template."""
     tipografia = template.TYPOGRAPHY
@@ -908,7 +1028,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "2d8825e11ce06b4a"
+HUELLA_DEL_TEMPLATE = "cbd27100de90a8dc"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():
@@ -1047,6 +1167,56 @@ def test_composition_23_el_preview_es_la_misma_composicion(fotos):
 
 
 @pytest.mark.perf
+def test_composition_42_las_capas_apiladas_son_el_armado(fotos, tmp_path):
+    """El navegador apila; no compone. Si apilar las capas donde dicen no diera
+    la miniatura final, el editor ensenaria una que no es la que se descarga."""
+    from PIL import ImageDraw
+
+    marco = Image.new("RGBA", (1280, 720), (233, 40, 39, 255))
+    ImageDraw.Draw(marco).rectangle((16, 16, 1263, 551), fill=(0, 0, 0, 0))
+    marco.save(tmp_path / "marco.png")
+
+    brief = composition.Brief(
+        title="LAS CAPAS NO MIENTEN",
+        photos={
+            "fondo": [fotos["fondo"]],
+            "conductor": [fotos["conductor"]],
+            "invitado": [fotos["invitado"], fotos["asimetrica"]],
+            "objeto": [fotos["objeto"]],
+            "logo": [fotos["logo"]],
+            "marco": [tmp_path / "marco.png"],
+        },
+        ajustes={
+            "conductor": [composition.Ajuste(dx=-333, dy=41, escala=73, capa=-1)],
+            "invitado": [composition.SIN_AJUSTE, composition.Ajuste(voltear_x=True, escala=131)],
+            "objeto": [composition.Ajuste(dx=9999, escala=170)],
+        },
+        titulo_x=210,
+        titulo_y=-77,
+    )
+    capas = composition.capas(brief)
+
+    # En orden de dibujo, y cada figura con nombre propio.
+    nombres = [c.nombre for c in capas]
+    assert nombres[0] == "fondo" and nombres[-3:] == ["logo", "titulo", "marco"]
+    assert sorted(nombres[1:-3]) == ["conductor.0", "invitado.0", "invitado.1", "objeto.0"]
+    # El conductor se mando atras: queda debajo de los dos invitados.
+    assert nombres.index("conductor.0") < nombres.index("invitado.1")
+
+    lienzo = Image.new("RGBA", template.CANVAS, (0, 0, 0, 255))
+    for capa in capas:
+        lienzo.alpha_composite(capa.imagen, (capa.x, capa.y))
+    assert lienzo.convert("RGB").tobytes() == _abrir(composition.compose(brief).final).tobytes()
+
+    # Las figuras dicen tambien donde se apoyan: es el punto desde el que el
+    # navegador escala sin pedir nada al servidor.
+    conductor = next(c for c in capas if c.nombre == "conductor.0")
+    slot = template.SLOTS["conductor"]
+    ajuste = composition.ajuste_de(brief, "conductor", 0)
+    assert conductor.ancla == (slot.x + ajuste.dx, slot.y + ajuste.dy)
+    assert conductor.y + conductor.imagen.height == conductor.ancla[1]
+
+
 def test_composition_24_repintar_por_titulo_tarda_menos_de_60ms(fotos):
     brief = _brief(fotos, conductor=1, invitado=1, fondo=1, logo=1, objeto=1)
     composition.preview(brief)  # deja la base en la cache

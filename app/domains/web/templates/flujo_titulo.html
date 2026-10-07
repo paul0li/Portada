@@ -16,6 +16,10 @@
   {# El fondo por defecto se eligió en el paso 3 y viaja hasta aquí, como la
      selección: el episodio se crea con todo lo del borrador o con nada. #}
   <input type="hidden" name="degradado" value="{{ degradado }}">
+  {# Dónde quedó el bloque del título si se arrastró en el lienzo. Viaja con el
+     formulario como el resto del título: lo tecleado no vive en la URL. #}
+  <input type="hidden" id="titulo-x" name="titulo_x" value="{{ titulo_x }}">
+  <input type="hidden" id="titulo-y" name="titulo_y" value="{{ titulo_y }}">
 
   <label>
     <span class="rotulo">Título del episodio</span>
@@ -23,73 +27,17 @@
               placeholder="Nadie esperaba esta respuesta">{{ titulo or "" }}</textarea>
   </label>
 
-  {# El título ocupa un bloque que termina donde empieza el invitado, y con eso
-     las palabras se apilan enseguida. Pero el título se dibuja ENCIMA de las
-     figuras, así que ensancharlo es una decisión de la semana. Aquí sí es un
-     slider de verdad y no enlaces como el resto del borrador: los enlaces
-     navegan, y navegar desde este paso se llevaría por delante lo tecleado.
-     Viaja con el formulario, como el título y la intensidad. #}
-  <fieldset class="intensidad">
-    <legend class="rotulo">Cómo se pone el título</legend>
-    {# Se dice porque no se adivina: con el tamaño en el centro manda Portada
-       (elige el mayor que quepa en tres líneas), y en cuanto lo tocás mandás
-       vos y el texto se reparte en el bloque que dejen los otros dos. #}
-    <p class="pista">
-      Con el tamaño en el centro, Portada elige el mayor que quepa. En cuanto lo
-      movés, mandás vos: el ancho reparte las palabras y el alto dice hasta dónde
-      pueden crecer.
-    </p>
-    <label class="deslizador">
-      <span>Ancho del bloque</span>
-      <input type="range" id="titulo-ancho" name="titulo_ancho"
-             min="{{ ancho_titulo.min }}" max="{{ ancho_titulo.max }}"
-             step="{{ ancho_titulo.paso }}" value="{{ titulo_ancho }}">
-    </label>
-    {# Son DOS mandos porque hacen dos cosas: el ancho decide dónde cortan las
-       líneas y el tamaño cuánto ocupa cada palabra. Con uno solo, ensanchar el
-       bloque no repartía el texto — el hueco se lo llevaba el auto-ajuste
-       subiendo el tamaño y el corte quedaba igual.
-       En el medio está el tamaño del template, que es lo que Portada hacía
-       hasta ahora. El rango sale del template, como el del ancho. #}
-    <label class="deslizador">
-      <span>Tamaño de la letra</span>
-      <input type="range" id="titulo-tamano" name="titulo_tamano"
-             min="{{ tamano_titulo.min }}" max="{{ tamano_titulo.max }}"
-             step="{{ tamano_titulo.paso }}" value="{{ titulo_tamano }}">
-    </label>
-    {# El tercero: hasta dónde puede crecer el título hacia arriba. El título no
-       se mueve —sigue apoyado donde dice el template— así que esto es cuántas
-       líneas entran antes de que el auto-ajuste tenga que achicar la letra, y
-       con cuántas palabras cabe «una palabra por línea». #}
-    <label class="deslizador">
-      <span>Alto del bloque</span>
-      <input type="range" id="titulo-alto" name="titulo_alto"
-             min="{{ alto_titulo.min }}" max="{{ alto_titulo.max }}"
-             step="{{ alto_titulo.paso }}" value="{{ titulo_alto }}">
-    </label>
-    <div class="fila">
-      <label class="opcion">
-        {# Sin marcar no manda nada -- no manda «off» --, así que el servidor lee
-           la PRESENCIA del campo y no su valor. #}
-        <input type="checkbox" id="titulo-apilado" name="titulo_apilado"
-               {{ "checked" if titulo_apilado }}>
-        <span>Una palabra por línea</span>
-      </label>
-    </div>
-  </fieldset>
+  {# Cómo se pone el título: ancho del bloque, tamaño de la letra y techo del
+     bloque. Ocultos porque no se tocan aquí: los mueven las asas del título en
+     el lienzo de arriba (WEB-45), con los mismos rangos y pasos del template.
+     Viajan con el formulario, como el título: lo tecleado no vive en la URL.
 
-  <fieldset class="intensidad">
-    <legend class="rotulo">Intensidad del acabado</legend>
-    <div class="fila">
-    {% for opcion in intensidades %}
-      <label class="opcion">
-        <input type="radio" name="strength" value="{{ opcion }}"
-               {{ "checked" if opcion == intensidad }}>
-        <span>{{ opcion|capitalize }}</span>
-      </label>
-    {% endfor %}
-    </div>
-  </fieldset>
+     Ni «una palabra por línea» ni la intensidad del acabado: la primera la
+     hacen las asas angostando el bloque, y la segunda no cambia nada mientras
+     no exista la pasada de IA (WEB-18). #}
+  <input type="hidden" id="titulo-ancho" name="titulo_ancho" value="{{ titulo_ancho }}">
+  <input type="hidden" id="titulo-tamano" name="titulo_tamano" value="{{ titulo_tamano }}">
+  <input type="hidden" id="titulo-alto" name="titulo_alto" value="{{ titulo_alto }}">
 
   <button class="boton" type="submit">Armar miniatura</button>
 </form>
@@ -121,46 +69,4 @@
     {% endfor %}
   </dl>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-// Lo único que no puede hacer una navegación: repintar mientras se teclea.
-// Son ~200 ms de espera y ~35 ms de servidor, porque cambiar el título no
-// vuelve a componer la base -- ver COMPOSITION-22.
-// Todos los campos del título repintan igual: los tres sliders y el apilado
-// cuestan lo mismo que una errata, porque el título es overlay y no toca la base.
-//
-// Y el preview ES el aviso: pedir una palabra por línea con demasiadas palabras
-// vuelve al corte normal —nunca se pierde una palabra— y eso se ve aquí mismo,
-// mientras se teclea, sin que haga falta un cartel que lo explique.
-(() => {
-  const campo = document.getElementById("titulo");
-  const imagen = document.getElementById("preview");
-  if (!campo || !imagen) return;
-  const ancho = document.getElementById("titulo-ancho");
-  const tamano = document.getElementById("titulo-tamano");
-  const alto = document.getElementById("titulo-alto");
-  const apilado = document.getElementById("titulo-apilado");
-  // Se corta por el PRIMER campo del título: van siempre al final y siempre
-  // todos, así que lo de delante es el borrador y nada más.
-  const base = imagen.src.split("&titulo_ancho=")[0];
-  let pendiente;
-  const repintar = () => {
-    clearTimeout(pendiente);
-    pendiente = setTimeout(() => {
-      imagen.src = base +
-        "&titulo_ancho=" + (ancho ? ancho.value : 0) +
-        "&titulo_tamano=" + (tamano ? tamano.value : 0) +
-        "&titulo_alto=" + (alto ? alto.value : 0) +
-        "&titulo_apilado=" + (apilado && apilado.checked ? 1 : 0) +
-        "&title=" + encodeURIComponent(campo.value);
-      imagen.style.visibility = "visible";
-    }, 200);
-  };
-  for (const control of [campo, ancho, tamano, alto, apilado]) {
-    if (control) control.addEventListener("input", repintar);
-  }
-})();
-</script>
 {% endblock %}

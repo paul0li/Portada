@@ -659,6 +659,27 @@ a.opcion[aria-pressed="true"] {
   flex: 1;
 }
 
+/* `.boton` pone su propio `display`, y eso le gana al atributo `hidden`: sin
+   esto, «Guardar en Fotos» se vería sin JS, donde no hace nada. */
+.boton[hidden] {
+  display: none;
+}
+
+/* La imagen que hay que mantener presionada, cuando no hay hoja de compartir. */
+.miniatura-final.resaltada {
+  outline: 3px solid var(--acento);
+  outline-offset: 3px;
+}
+
+.descarga {
+  text-align: center;
+  font-size: 13px;
+}
+
+.descarga a {
+  color: var(--tinta-media);
+}
+
 /* El título ya está EN la miniatura, a tamaño de titular. Repetirlo debajo como
    encabezado es gritar dos veces; aquí solo sirve para saber qué episodio es. */
 .titulo-episodio {
@@ -679,7 +700,9 @@ a.opcion[aria-pressed="true"] {
   background: linear-gradient(var(--pantalla) 78%, transparent);
 }
 
-.preview-fijo img {
+/* `>`: solo el <img> de respaldo. Las capas del lienzo también son <img>, y
+   con el fondo rayado de esta regla la de arriba tapaba a todas las demás. */
+.preview-fijo > img {
   width: 100%;
   height: auto;
   display: block;
@@ -687,6 +710,151 @@ a.opcion[aria-pressed="true"] {
   border-radius: var(--radio);
   border: 1px solid var(--linea);
   background: repeating-linear-gradient(135deg, #e4e4df 0 7px, #edede9 7px 14px);
+}
+
+/* --- el lienzo ---------------------------------------------------------- */
+
+/* El preview con JS: las capas del armado apiladas, en porcentajes del lienzo
+   de 1280x720, así que se adapta al ancho sin escuchar un solo `resize`. Las
+   imágenes no reciben el dedo: lo recibe el lienzo y decide él qué se tocó,
+   mirando el alfa (ver lienzo.js). `touch-action: none` es lo que deja
+   arrastrar sin que el teléfono intente desplazar la página. */
+.lienzo {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radio);
+  border: 1px solid var(--linea);
+  background: #000;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+
+.lienzo:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+.lienzo .capa {
+  position: absolute;
+  max-width: none;
+  /* Una capa es solo su imagen: ni fondo, ni borde, ni proporción propia. Si
+     otra regla de `img` le pone fondo, la capa de arriba tapa a todas. */
+  aspect-ratio: auto;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  pointer-events: none;
+}
+
+/* Blanca con sombra oscura y no del rojo de la UI: la miniatura del show lleva
+   un marco rojo, y una selección roja sobre él solo enseñaba uno de sus lados.
+   Blanco sobre negro se ve encima de cualquier cosa. */
+.lienzo .seleccion {
+  position: absolute;
+  outline: 2px dashed #fff;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+}
+
+/* El asa de escalar. 28 px de dedo aunque se vea más chica: es lo mínimo que
+   se acierta con un pulgar sin mirar. */
+.lienzo .asa {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: nesw-resize;
+  touch-action: none;
+}
+
+/* Las asas del bloque del título: a media altura del borde derecho (ancho) y a
+   medio ancho del borde de arriba (alto). */
+.lienzo .asa-ancho {
+  top: calc(50% - 14px);
+  right: -14px;
+  cursor: ew-resize;
+}
+
+.lienzo .asa-alto {
+  top: -14px;
+  right: calc(50% - 14px);
+  cursor: ns-resize;
+}
+
+.lienzo .asa-ancho::after,
+.lienzo .asa-alto::after {
+  border-radius: 3px;
+}
+
+.lienzo .asa::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--tinta);
+}
+
+/* Fondo sólido: va dentro del preview pegajoso, y con el degradado de este lo
+   que se desplaza por debajo se leía a través de los botones. */
+.herramientas {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  background: var(--pantalla);
+}
+
+.herramientas .fila {
+  display: flex;
+  gap: 6px;
+}
+
+.herramientas .opcion {
+  display: flex;
+  flex: 1 1 auto;
+  padding: 0 8px;
+  white-space: nowrap;
+  min-height: 38px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+}
+
+/* Los botones de la barra son íconos: cuadrados y del ancho de un dedo. */
+.herramientas .opcion.icono {
+  flex: 0 0 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.herramientas .opcion.icono svg {
+  display: block;
+}
+
+.herramientas .opcion[aria-pressed="true"] {
+  border-color: var(--acento);
+  color: var(--acento);
+  font-weight: 600;
+}
+
+.herramientas .opcion:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Con el lienzo puesto, los pads con flechas sobran: hacen lo mismo con otro
+   mando. Siguen en el HTML para quien no tenga JS. */
+.con-lienzo .empujar {
+  display: none;
 }
 
 /* --- inicio e historial ------------------------------------------------- */

@@ -9,7 +9,9 @@
 {% endblock %}
 
 {% block contenido %}
-<img class="miniatura-final" src="/episodes/{{ episode.id }}/assembly/file"
+{# El PNG completo y no el preview: en un iPhone sin hoja de compartir, lo que
+   se guarda manteniendo presionada esta imagen es la miniatura de verdad. #}
+<img class="miniatura-final" id="miniatura" src="/episodes/{{ episode.id }}/assembly/file"
      alt="{{ episode.title }}" width="1280" height="720">
 
 {# Corregir la errata aquí mismo, sin volver a recorrer el flujo. Cuesta ~24 ms
@@ -22,10 +24,25 @@
   <button class="boton secundario" type="submit">Corregir el título</button>
 </form>
 
+{# «Guardar en Fotos» y no «Descargar»: en un iPhone, un enlace de descarga
+   manda el PNG a Archivos. La hoja de compartir lo manda a Fotos («Guardar
+   imagen»). El botón nace oculto y lo muestra el script: sin JS no haría nada,
+   y queda el enlace de descarga de siempre. #}
 <div class="acciones">
-  <a class="boton" href="/episodes/{{ episode.id }}/assembly/file" download>Descargar</a>
+  <button class="boton" type="button" id="guardar-fotos" hidden
+          data-src="/episodes/{{ episode.id }}/assembly/file"
+          data-nombre="{{ episode.title or 'miniatura' }}">Guardar en Fotos</button>
   <a class="boton secundario" href="{{ editar }}">Cambiar fotos</a>
 </div>
+{# Donde no hay hoja de compartir —Portada por HTTP en la LAN no es un contexto
+   seguro, y Safari no la ofrece ahí— el botón enseña esto en vez de no hacer
+   nada. #}
+<p class="aviso" id="guardar-pista" role="status" hidden>
+  Mantén presionada la imagen de arriba y toca «Agregar a Fotos».
+</p>
+<p class="descarga">
+  <a href="/episodes/{{ episode.id }}/assembly/file" download>Descargar el PNG</a>
+</p>
 
 <div class="tarjeta">
   <p class="rotulo">Se usó</p>
@@ -40,8 +57,9 @@
     {% if ajustadas %}
       <div><dt>Ajustadas</dt><dd>{{ ajustadas|join(", ") }}</dd></div>
     {% endif %}
-    <div><dt>Intensidad</dt><dd>{{ episode.strength }}</dd></div>
     <div><dt>Template</dt><dd>v{{ armado.template_version }}</dd></div>
   </dl>
 </div>
 {% endblock %}
+
+{% block scripts %}<script src="{{ estatico('guardar.js') }}" defer></script>{% endblock %}

@@ -9,7 +9,12 @@
    ser una revelación: para cuando se escribe el título ya se vio el resultado.
    `onerror` lo esconde en vez de dejar el icono de imagen partida: el preview
    es mejora, nunca dependencia (SPEC §11.4). #}
-<div class="preview-fijo">
+{# Con JS, el preview se convierte en un LIENZO: las mismas capas que arma el
+   servidor, apiladas en el navegador, y cada figura se arrastra y se escala con
+   el dedo (WEB-43). El `<img>` se queda como estaba para quien no tenga JS —y
+   para el instante antes de que el lienzo cargue—: es la misma miniatura. #}
+<div class="preview-fijo" {% if lienzo %}data-lienzo="{{ lienzo }}"{% endif %}>
   <img id="preview" src="{{ preview }}" alt="Cómo va quedando la miniatura"
        width="640" height="360" onerror="this.style.visibility='hidden'">
 </div>
+{% if lienzo %}<script src="{{ estatico('lienzo.js') }}" defer></script>{% endif %}

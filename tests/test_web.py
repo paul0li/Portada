@@ -347,7 +347,7 @@ def test_web_17_el_titulo_llega_al_armado(client, imagen):
     assert "nadie esperaba esta respuesta" in pagina
 
 
-def test_web_18_la_intensidad_es_la_unica_perilla(client, imagen):
+def test_web_18_no_hay_perillas_que_no_hagan_nada(client, imagen):
     """SPEC 11.3: un modelo devuelve un parametro validado, nunca prosa que se
     pega en algun sitio. El paso 6 del prototipo -- "instrucciones
     personalizadas", con presets tipo "colores saturados" -- es justo lo que la
@@ -378,9 +378,11 @@ def test_web_18_la_intensidad_es_la_unica_perilla(client, imagen):
     assert titulo_limpio == titulo_sucio, "el texto libre se coló en el título"
     assert png_limpio == png_sucio, "un texto libre cambió la miniatura"
 
+    # Y la intensidad no se ofrece: con `NoopFinisher` no cambia nada, y un
+    # botón que no hace nada es un botón que miente.
     ultimo = client.get("/nueva", params={"paso": 5, "conductor": ids["conductor"]}).text
-    for perilla in ("suave", "medio", "fuerte"):
-        assert perilla in ultimo.lower()
+    assert 'name="strength"' not in ultimo
+    assert "Intensidad" not in ultimo
 
 
 def test_web_19_volver_atras_conserva_lo_elegido(client, imagen):
@@ -499,15 +501,245 @@ def test_web_37_el_fondo_por_defecto_se_elige_en_su_paso(client, imagen):
     )
 
 
+def _lienzo(client, **params):
+    respuesta = client.get("/nueva/lienzo.json", params=params)
+    assert respuesta.status_code == 200, respuesta.text[:300]
+    return respuesta.json()
+
+
+def test_web_43_el_preview_es_un_lienzo_de_capas(client, imagen):
+    """El navegador apila; no compone. Lo que describe el JSON, apilado, es el
+    preview, y cada figura dice qué se le puede hacer con los rangos del template.
+    """
+    from PIL import Image
+
+    from app.domains.composition import api as composition
+
+    assert client.get("/nueva/lienzo.json").status_code == 401
+
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    borrador = {
+        "conductor": ids["conductor"],
+        "invitado": ids["invitado"],
+        "fondo": ids["fondo"],
+        "ajuste": "conductor.0:-100,20,0,0,0,70",
+        "title": "LAS CAPAS NO MIENTEN",
+    }
+    lienzo = _lienzo(client, **borrador)
+
+    assert lienzo["lienzo"] == list(composition.TEMPLATE.canvas)
+    nombres = [c["nombre"] for c in lienzo["capas"]]
+    # La marca se pone sola, como en el preview: el flujo la da por puesta.
+    assert nombres == ["fondo", "invitado.0", "conductor.0", "logo", "titulo", "marco"]
+
+    conductor = next(c for c in lienzo["capas"] if c["nombre"] == "conductor.0")
+    assert conductor["ajuste"]["escala"] == 70 and conductor["ajuste"]["dx"] == -100
+    assert conductor["mueve"] and conductor["voltea"]
+    assert conductor["apoyo"] == "bottom-center"
+    assert conductor["ancla"][1] == conductor["y"] + conductor["alto"]
+    fondo = lienzo["capas"][0]
+    assert not fondo["mueve"] and fondo["voltea"], "el fondo se voltea pero no se mueve"
+    marco = lienzo["capas"][-1]
+    assert not marco["mueve"] and not marco["voltea"], "el marco es marca: ni se mueve ni se voltea"
+    assert lienzo["limites"]["escala"] == [
+        composition.AJUSTES.escala_min,
+        composition.AJUSTES.escala_max,
+    ]
+
+    # Apiladas donde dicen, las capas son el preview. Se comparan a la mitad de
+    # lado, que es a lo que se sirven las dos cosas.
+    apilado = Image.new("RGBA", (640, 360), (0, 0, 0, 255))
+    for capa in lienzo["capas"]:
+        servida = client.get(capa["src"])
+        assert servida.status_code == 200, (capa["nombre"], servida.text[:200])
+        img = Image.open(io.BytesIO(servida.content)).convert("RGBA")
+        assert abs(img.width - capa["ancho"] / 2) <= 1 and abs(img.height - capa["alto"] / 2) <= 1
+        apilado.alpha_composite(img, (round(capa["x"] / 2), round(capa["y"] / 2)))
+    params = {k: v for k, v in borrador.items() if k != "title"}
+    preview = client.get(
+        "/nueva/preview.jpg", params={**params, "title": borrador["title"]}
+    ).content
+    esperado = Image.open(io.BytesIO(preview)).convert("RGB")
+    diferencia = sum(
+        abs(a - b)
+        for pa, pb in zip(apilado.convert("RGB").getdata(), esperado.getdata(), strict=True)
+        for a, b in zip(pa, pb, strict=True)
+    ) / (640 * 360 * 3)
+    assert diferencia < 4, f"las capas apiladas no son el preview ({diferencia:.1f} de media)"
+
+    # Una figura se sirve con lo que la cambia y nada más: moverla no cambia su
+    # URL, así que arrastrar no vuelve a bajar la imagen.
+    movido = _lienzo(client, **{**borrador, "ajuste": "conductor.0:200,0,0,0,0,70"})
+    otro = next(c for c in movido["capas"] if c["nombre"] == "conductor.0")
+    assert otro["src"] == conductor["src"] and otro["x"] == conductor["x"] + 300
+
+    # La capa de una foto ajena no se sirve.
+    _entrar(client, email="otra@ejemplo.cl")
+    assert client.get(conductor["src"]).status_code == 204
+    client.post("/salir")
+    assert client.get(conductor["src"]).status_code == 401
+
+
+def test_web_44_lo_del_lienzo_viaja_en_la_url_y_llega_al_armado(client, imagen):
+    """Escala y sitio del título viajan como el resto del borrador. Sin JS, los
+    pads de siempre siguen ahí."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    escalado = "conductor.0:-100,20,0,0,0,70"
+    pagina = client.get(
+        "/nueva", params={"paso": 1, "conductor": ids["conductor"], "ajuste": escalado}
+    )
+    assert pagina.status_code == 200
+    # El lienzo se describe con lo mismo que lleva la página.
+    lienzo = re.search(r'data-lienzo="([^"]+)"', pagina.text)
+    assert lienzo, "el paso no ofrece el lienzo"
+    assert "ajuste=conductor.0" in lienzo.group(1).replace("%2C", ",")
+    assert '<script src="/estatico/lienzo.js' in pagina.text
+    # El paso siguiente se lleva la escala.
+    siguiente = re.search(r'href="(/nueva\?paso=2[^"]*)"', pagina.text)
+    assert siguiente and "70" in siguiente.group(1).split("ajuste=")[1], (
+        "la escala no sobrevive al paso siguiente"
+    )
+    # Sin JS, los pads siguen.
+    assert 'class="empujar"' in pagina.text
+
+    # El paso del título lleva el sitio del título en el formulario.
+    titulo = client.get("/nueva", params={"paso": 5, "conductor": ids["conductor"]})
+    assert 'name="titulo_x"' in titulo.text and 'name="titulo_y"' in titulo.text
+
+    creado = _armar(
+        client,
+        {"conductor": ids["conductor"]},
+        ajuste=escalado,
+        titulo_x=200,
+        titulo_y=-60,
+    )
+    assert creado.status_code in (302, 303), creado.text[:400]
+    episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+    guardado = client.get(f"/episodes/{episode_id}").json()
+    assert guardado["ajustes"]["conductor"][0]["escala"] == 70
+    assert (guardado["titulo_x"], guardado["titulo_y"]) == (200, -60)
+
+
+def test_web_45_el_titulo_del_lienzo_describe_su_bloque(client, imagen):
+    """Las asas del título manejan los tres mandos de siempre: el JSON dice dónde
+    está el bloque, con qué tamaño salió la letra, y entre qué topes y de cuánto
+    en cuánto se mueve cada mando -- todo del template."""
+    from app.domains.episodes import api as episodes
+
+    tipografia = episodes.TIPOGRAFIA
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    def _titulo(**mandos):
+        lienzo = _lienzo(client, conductor=ids["conductor"], title="NADIE LO VIO", **mandos)
+        return next(c for c in lienzo["capas"] if c["nombre"] == "titulo")
+
+    puesto = _titulo(titulo_ancho=80, titulo_alto=40, titulo_tamano=16, titulo_x=100, titulo_y=-50)
+    techo = tipografia.top - 40 - 50
+    regla = tipografia.bottom - 50 + tipografia.rule_gap + tipografia.rule_height
+    assert puesto["bloque"] == {
+        "x": tipografia.left + 100,
+        "y": techo,
+        "ancho": tipografia.block_width + 80,
+        "alto": regla - techo,
+    }
+    assert puesto["tamano"] == tipografia.size_max + 16
+    assert puesto["mandos"] == {"ancho": 80, "tamano": 16, "alto": 40}
+    assert puesto["rangos"] == {
+        "ancho": [-tipografia.ancho_menos, tipografia.ancho_mas, tipografia.ancho_paso],
+        "tamano": [-tipografia.tamano_menos, tipografia.tamano_mas, tipografia.tamano_paso],
+        "alto": [-tipografia.alto_menos, tipografia.alto_mas, tipografia.alto_paso],
+    }
+
+    # Con el tamaño en automático, dice el que eligió el auto-ajuste: es desde
+    # donde la esquina empieza a agrandar.
+    automatico = _titulo()
+    assert tipografia.size_min <= automatico["tamano"] <= tipografia.size_max
+    assert automatico["mandos"] == {"ancho": 0, "tamano": 0, "alto": 0}
+
+    # Desmedido, se describe acotado: lo que se dibuja.
+    acotado = _titulo(titulo_ancho=99999)
+    assert acotado["mandos"]["ancho"] == tipografia.ancho_mas
+
+
+def test_web_46_quito_el_fondo_desde_el_lienzo(client, imagen, app):
+    """El botón está donde hace algo, y al quitar el fondo la capa cambia de URL."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    borrador = {"conductor": ids["conductor"], "fondo": ids["fondo"]}
+
+    def _capas():
+        return {c["nombre"]: c for c in _lienzo(client, **borrador)["capas"]}
+
+    # Con un proveedor que no quita fondos no se ofrece: no haría nada (WEB-36).
+    # Se pone a mano y no se confía en el de por defecto: un `.env` local con
+    # `rembg` haría pasar este test por el motivo equivocado.
+    class _NoRecorta:
+        name = "passthrough"
+        quita_fondo = False
+
+    app.state.cutout_provider = _NoRecorta()
+    assert _capas()["conductor.0"]["recorte"]["admite"] is False
+
+    app.state.cutout_provider = _Recortador()
+    antes = _capas()
+    conductor = antes["conductor.0"]
+    assert conductor["foto"] == ids["conductor"]
+    assert conductor["recorte"] == {"admite": True, "puesto": False}
+    assert "recorte" not in antes["fondo"], "al fondo no se le quita el fondo"
+
+    aqui = "/nueva?paso=1&conductor=" + ids["conductor"]
+    quitar = client.post(
+        f"/libreria/fotos/{ids['conductor']}/fondo", data={"volver": aqui}, follow_redirects=False
+    )
+    assert quitar.status_code == 303
+    despues = _capas()["conductor.0"]
+    assert despues["recorte"]["puesto"] is True
+    assert despues["src"] != conductor["src"], "la capa no cambió de URL: se vería la foto vieja"
+
+    client.post(
+        f"/libreria/fotos/{ids['conductor']}/fondo/deshacer",
+        data={"volver": aqui},
+        follow_redirects=False,
+    )
+    devuelta = _capas()["conductor.0"]
+    assert devuelta["recorte"]["puesto"] is False and devuelta["src"] == conductor["src"]
+
+    # Y la barra del lienzo trae el botón, que llama a esos mismos endpoints.
+    script = client.get("/estatico/lienzo.js").text
+    assert "Quitarle el fondo" in script and "/fondo" in script and "recorte.admite" in script
+
+
+def test_web_47_guardo_la_miniatura_en_fotos(client, imagen):
+    """En iPhone, un enlace de descarga manda a Archivos; la hoja de compartir
+    manda a Fotos. Sin hoja de compartir (HTTP), mantener presionada la imagen."""
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    creado = _armar(client, {"conductor": ids["conductor"]})
+    pagina = client.get(creado.headers["location"]).text
+    episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+    archivo = f"/episodes/{episode_id}/assembly/file"
+
+    boton = re.search(r'<button[^>]*id="guardar-fotos"[^>]*>', pagina)
+    assert boton, "no hay botón para guardar en Fotos"
+    assert f'data-src="{archivo}"' in boton.group(0)
+    # Lo que se guarda manteniendo presionado es el PNG de verdad, no el preview.
+    assert re.search(rf'<img[^>]*class="miniatura-final"[^>]*src="{archivo}"', pagina)
+    assert "Agregar a Fotos" in pagina, "no dice qué hacer donde no hay hoja de compartir"
+    # Sin JS, la descarga sigue ahí.
+    assert f'href="{archivo}" download' in pagina
+    script = client.get("/estatico/guardar.js").text
+    assert "navigator.share" in script and "canShare" in script
+
+
 def test_web_42_pongo_el_titulo_ancho_o_apilado(client, imagen):
-    """Los dos sliders y la casilla del título, y que los tres llegan al armado.
+    """Los tres mandos del título viajan con el formulario y llegan al armado.
 
-    Son los únicos controles del flujo que no son enlaces: desde este paso,
-    navegar se llevaría por delante lo tecleado. Viajan con el formulario, como
-    el título.
-
-    Y son DOS sliders y no uno porque son dos decisiones (COMPOSITION-38): el
-    ancho decide dónde cortan las líneas, el tamaño cuánto ocupa cada palabra.
+    En pantalla los manejan las asas del lienzo (WEB-45): la página ya no trae
+    sliders, ni la casilla de una palabra por línea, ni su explicación. Los
+    campos siguen ahí, ocultos, porque el formulario es lo que crea el episodio.
     """
     from app.domains.episodes import api as episodes
 
@@ -517,20 +749,12 @@ def test_web_42_pongo_el_titulo_ancho_o_apilado(client, imagen):
 
     pagina = client.get(paso)
     assert pagina.status_code == 200
-    # El rango sale del template, no del HTML: con dos copias, la del HTML se
-    # queda vieja el día que el bloque del título cambie.
-    assert f'max="{episodes.TIPOGRAFIA.ancho_mas}"' in pagina.text
-    assert f'min="{-episodes.TIPOGRAFIA.ancho_menos}"' in pagina.text
-    assert f'step="{episodes.TIPOGRAFIA.ancho_paso}"' in pagina.text
-    assert f'min="{-episodes.TIPOGRAFIA.tamano_menos}"' in pagina.text
-    assert f'max="{episodes.TIPOGRAFIA.tamano_mas}"' in pagina.text
-    assert f'step="{episodes.TIPOGRAFIA.tamano_paso}"' in pagina.text
-    assert f'min="{-episodes.TIPOGRAFIA.alto_menos}"' in pagina.text
-    assert f'max="{episodes.TIPOGRAFIA.alto_mas}"' in pagina.text
-    assert f'step="{episodes.TIPOGRAFIA.alto_paso}"' in pagina.text
-    assert 'name="titulo_tamano"' in pagina.text
-    assert 'name="titulo_alto"' in pagina.text
-    assert 'name="titulo_apilado"' in pagina.text
+    for campo in ("titulo_ancho", "titulo_tamano", "titulo_alto"):
+        assert re.search(rf'<input type="hidden"[^>]*name="{campo}"', pagina.text), campo
+    assert 'type="range"' not in pagina.text, "quedó un slider en el paso del título"
+    assert 'name="titulo_apilado"' not in pagina.text
+    assert "Una palabra por línea" not in pagina.text
+    assert 'name="strength"' not in pagina.text, "la intensidad se ofrece y no hace nada"
 
     def _png(**extra):
         creado = _armar(client, {"conductor": ids["conductor"]}, **extra)
@@ -751,7 +975,9 @@ def test_web_38_empujo_una_figura_desde_su_paso(client, imagen):
         params={
             "paso": 1,
             "conductor": ids["conductor"],
-            "ajuste": f"conductor:{composition.AJUSTES.max_x},0,0",
+            "ajuste": "conductor:{},0,0".format(
+                composition.acotar("conductor", composition.Ajuste(dx=99999)).dx
+            ),
         },
     )
     derechas = re.findall(r'aria-label="Derecha"', en_el_tope.text)
@@ -814,9 +1040,13 @@ def test_web_23_el_preview_refleja_el_titulo(client, imagen):
     assert sin_titulo.status_code == con_titulo.status_code == 200
     assert sin_titulo.content != con_titulo.content, "el titulo no llega al preview"
 
-    # Y el paso del titulo trae con que repintar sin recargar la pagina.
+    # Y el paso del titulo trae con que repintar sin recargar la pagina. Desde
+    # v11 lo hace el lienzo, que repinta la capa del titulo -- o el <img> de
+    # siempre, si el lienzo no cargo.
     paso = client.get("/nueva", params={"paso": 5, **base}).text
-    assert 'id="titulo"' in paso and "addEventListener" in paso
+    assert 'id="titulo"' in paso and '<script src="/estatico/lienzo.js' in paso
+    script = client.get("/estatico/lienzo.js").text
+    assert 'campo("titulo")' in script and 'addEventListener("input"' in script
 
 
 def test_web_24_no_puedo_pedir_el_preview_con_la_foto_de_otro(client, imagen):
