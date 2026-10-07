@@ -65,9 +65,11 @@
   //
   // No hay forma de abrir ChatGPT con una imagen ya adjunta: el parámetro `q`
   // de chatgpt.com solo lleva texto, y además lo ENVÍA al instante, sin la
-  // imagen. Así que la imagen va por la hoja de compartir con la instrucción, y
-  // la instrucción queda también copiada, por si la app que la recibe solo toma
-  // la imagen.
+  // imagen. Así que la imagen va por la hoja de compartir y la instrucción
+  // queda copiada para pegarla.
+  //
+  // Solo la imagen, sin `text`: iOS ofrece en la hoja únicamente las apps que
+  // aceptan TODO lo compartido, y con imagen + texto ChatGPT no aparecía.
 
   if (mejorar) {
     const pista = document.getElementById("mejorar-pista");
@@ -115,8 +117,8 @@
       // solo deja abrir la hoja como respuesta directa a un toque.
       copiar(texto);
       if (puedeCompartir()) {
-        avisa("Elige ChatGPT. Si la instrucción no aparece, pégala: ya está copiada.");
-        await compartir({ text: texto });
+        avisa("Elige ChatGPT y pega la instrucción: ya está copiada.");
+        await compartir({});
         return;
       }
       avisa("Instrucción copiada. Descarga el PNG, adjúntalo en ChatGPT y pega la instrucción.", true);
