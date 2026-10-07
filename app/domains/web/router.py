@@ -588,14 +588,18 @@ def _marca(db, settings, user_id: str) -> dict[str, dict]:
 
 
 @router.get("/entrar")
-def entrar(request: Request, user_id: OptionalUser, token: str = "") -> Response:
+def entrar(request: Request, settings: Config, user_id: OptionalUser, token: str = "") -> Response:
     """Una sola ruta para dos momentos: pedir el enlace, y abrirlo.
 
     El enlace del correo apunta aquí y no a `/auth/verify`, que solo acepta POST.
     Y esta página no inicia sesión: pinta el token en un campo y hace falta
     pulsar el botón, para que ningún GET cambie estado y un escáner de enlaces
     no gaste el token de un solo uso antes de que lo abras.
+
+    Con acceso por tailnet no hay nada que pedir ni que canjear (WEB-48).
     """
+    if settings.acceso == "tailnet":
+        return RedirectResponse("/", status_code=303)
     if token:
         return _pagina(request, "entrar_token.html", {"token": token})
     if user_id is not None:
@@ -615,6 +619,8 @@ def pedir_enlace(
     """
     from app.core.middleware import client_ip
 
+    if settings.acceso == "tailnet":
+        return RedirectResponse("/", status_code=303)
     try:
         identity.request_magic_link(
             db, settings, request.app.state.mailer, raw_email=email, ip=client_ip(request)
@@ -629,6 +635,8 @@ def pedir_enlace(
 def verificar(
     request: Request, db: Db, settings: Config, token: Annotated[str, Form()] = ""
 ) -> Response:
+    if settings.acceso == "tailnet":
+        return RedirectResponse("/", status_code=303)
     try:
         grant = identity.verify_magic_link(db, settings, token=token)
     except AppError as error:
@@ -660,7 +668,7 @@ def salir(request: Request, db: Db) -> Response:
 
 
 @router.get("/")
-def inicio(request: Request, db: Db, user_id: OptionalUser) -> Response:
+def inicio(request: Request, db: Db, settings: Config, user_id: OptionalUser) -> Response:
     if user_id is None:
         return _a_entrar()
     return _pagina(
@@ -671,6 +679,8 @@ def inicio(request: Request, db: Db, user_id: OptionalUser) -> Response:
             "roles": ORDEN_ROLES,
             "etiquetas": ETIQUETAS,
             "recientes": _recientes(db, user_id),
+            # Por tailnet no hay sesión: un «Salir» no cerraría nada (WEB-48).
+            "puede_salir": settings.acceso == "enlace",
         },
     )
 

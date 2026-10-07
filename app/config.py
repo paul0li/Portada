@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DATA_DIR = Path("data")
@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     # La URL que el usuario abre. Es la base del magic link, asi que apuntar
     # esto al host equivocado manda tokens validos a un dominio ajeno.
     public_url: str = "http://localhost:8000"
+
+    # Como se entra. `enlace` es el magic link. `tailnet` no tiene pantalla de
+    # entrar: la puerta es Tailscale (`tailscale serve`), y todo el que llega
+    # por ahi es `acceso_como`. Lo que no viene de Tailscale recibe 403, para
+    # que escuchar en la red local no abra la app a quien comparta el wifi.
+    acceso: Literal["enlace", "tailnet"] = "enlace"
+    acceso_como: str = ""
 
     magic_link_ttl_minutes: int = 15
     session_ttl_days: int = 30
@@ -68,6 +75,13 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
         return v.rstrip("/")
+
+    @model_validator(mode="after")
+    def _tailnet_dice_quien(self) -> "Settings":
+        # Sin esto, `tailnet` arrancaria y fallaria en el primer request.
+        if self.acceso == "tailnet" and not self.acceso_como.strip():
+            raise ValueError("PORTADA_ACCESO=tailnet necesita PORTADA_ACCESO_COMO=<email>")
+        return self
 
 
 @lru_cache

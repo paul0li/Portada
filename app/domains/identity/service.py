@@ -15,6 +15,7 @@ Tres decisiones que explican el archivo:
 """
 
 import re
+import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
@@ -184,6 +185,29 @@ def authenticate(db: Database, session_token: str | None) -> str | None:
         return None
     with db.connection() as conn:
         return repo.find_live_session_user(conn, hash_token(session_token))
+
+
+def usuario_de_la_instancia(db: Database, raw_email: str) -> str:
+    """El `user_id` de quien entra por tailnet; lo crea si todavia no existe.
+
+    Con dos primeros accesos a la vez, los dos ven que no existe y uno choca
+    con el UNIQUE del email: ese vuelve a leer en vez de fallar.
+    """
+    email = validate_email(raw_email)
+    with db.connection() as conn:
+        user = repo.get_user_by_email(conn, email)
+    if user is not None:
+        return user.id
+    try:
+        with db.transaction() as conn:
+            user = repo.create_user(conn, email)
+        log.info("identity.user.created", extra={"user_id": user.id, "via": "tailnet"})
+        return user.id
+    except sqlite3.IntegrityError:
+        with db.connection() as conn:
+            user = repo.get_user_by_email(conn, email)
+        assert user is not None
+        return user.id
 
 
 def logout(db: Database, session_token: str | None) -> None:

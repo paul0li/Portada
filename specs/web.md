@@ -19,6 +19,7 @@ es que está en el cliente y no debería.
 - **WEB-02** — pedir el enlace responde lo mismo exista o no la cuenta, igual que la API.
 - **WEB-03** — abrir el enlace del correo y pulsar «Entrar» deja la sesión iniciada.
 - **WEB-04** — un enlace vencido o ya usado lo dice en la página y ofrece pedir otro, en vez de mostrar un error crudo.
+- **WEB-48** — con el acceso por tailnet, abrir Portada lleva directo al inicio: `/entrar` redirige y no hay botón «Salir», porque no hay sesión que cerrar.
 
 ## La librería
 

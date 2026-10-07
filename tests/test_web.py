@@ -1307,3 +1307,15 @@ def test_web_36_sin_recorte_activo_el_modal_lo_dice(client, imagen, app):
 
     assert "/fondo" not in modal, "ofrece un botón que no puede hacer nada"
     assert "no está activo" in modal, "no dice por qué no está el botón"
+
+
+def test_web_48_por_tailnet_se_entra_directo_al_inicio(tailnet):
+    inicio = tailnet.get("/", follow_redirects=False)
+    assert inicio.status_code == 200, "por tailnet no deberia haber pantalla de entrar"
+    assert 'action="/salir"' not in inicio.text, "no hay sesion que cerrar"
+
+    entrar = tailnet.get("/entrar", follow_redirects=False)
+    assert entrar.status_code == 303
+    assert entrar.headers["location"] == "/"
+
+    assert tailnet.get("/libreria").status_code == 200
