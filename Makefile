@@ -1,4 +1,4 @@
-.PHONY: install install-cutout cutout-model dev test lint fmt migrate preview clean
+.PHONY: install install-cutout cutout-model dev serve estado test lint fmt migrate preview clean
 
 install:
 	uv sync
@@ -15,6 +15,18 @@ cutout-model:
 
 dev:
 	uv run uvicorn app.main:app --reload --port 8000
+
+# Como se usa desde el telefono (ver README, «Despliegue»): sin --reload y solo
+# en 127.0.0.1. A la red llega por `tailscale serve`; escuchar en 0.0.0.0
+# abriria el puerto a quien comparta el wifi.
+serve:
+	uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# Que parte se cayo, en un paso: el servidor, Tailscale o el `serve`.
+estado:
+	@printf "servidor   "; curl -s -o /dev/null -w "%{http_code}\n" --max-time 3 http://127.0.0.1:8000/health || echo "no responde"
+	@printf "tailscale  "; tailscale status --self --peers=false 2>&1 | head -1
+	@echo "serve"; tailscale serve status 2>&1 | sed 's/^/  /'
 
 # PYTHONDONTWRITEBYTECODE: el .pyc guarda el mtime del fuente en SEGUNDOS. Dos
 # ediciones del mismo tamano dentro del mismo segundo (un script que cambia algo
