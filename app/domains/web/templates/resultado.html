@@ -44,6 +44,23 @@
   <a href="/episodes/{{ episode.id }}/assembly/file" download>Descargar el PNG</a>
 </p>
 
+{# La pasada de IA, por fuera de Portada (WEB-49): el PNG final va a ChatGPT
+   por la hoja de compartir, con la instrucción. El subtítulo no tiene `name`:
+   es texto para ChatGPT, nunca para el armado (WEB-18). Nace oculta y la
+   muestra el script, porque sin JS no haría nada. #}
+<div class="tarjeta" id="mejorar" hidden>
+  <p class="rotulo">Mejorar con IA</p>
+  <label>
+    <span class="rotulo">Subtítulo (opcional)</span>
+    <input type="text" id="subtitulo-chatgpt" autocomplete="off"
+           placeholder="Lo que dirá el subtítulo">
+  </label>
+  <button class="boton" type="button" id="mejorar-chatgpt"
+          data-src="/episodes/{{ episode.id }}/assembly/file"
+          data-instruccion="Mejora esta miniatura de YouTube.">Mejorar en ChatGPT</button>
+  <p class="aviso" id="mejorar-pista" role="status" hidden></p>
+</div>
+
 <div class="tarjeta">
   <p class="rotulo">Se usó</p>
   <dl class="resumen">

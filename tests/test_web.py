@@ -1319,3 +1319,28 @@ def test_web_48_por_tailnet_se_entra_directo_al_inicio(tailnet):
     assert entrar.headers["location"] == "/"
 
     assert tailnet.get("/libreria").status_code == 200
+
+
+def test_web_49_mejoro_la_miniatura_en_chatgpt(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    creado = _armar(client, {"conductor": ids["conductor"]})
+    pagina = client.get(creado.headers["location"]).text
+    episode_id = creado.headers["location"].rsplit("/", 1)[-1]
+
+    boton = re.search(r'<button[^>]*id="mejorar-chatgpt"[^>]*>', pagina)
+    assert boton, "no hay botón para mejorar en ChatGPT"
+    assert f'data-src="/episodes/{episode_id}/assembly/file"' in boton.group(0)
+    assert 'data-instruccion="Mejora esta miniatura de YouTube."' in boton.group(0)
+
+    subtitulo = re.search(r'<input[^>]*id="subtitulo-chatgpt"[^>]*>', pagina)
+    assert subtitulo, "no hay dónde escribir el subtítulo"
+    assert "name=" not in subtitulo.group(0), "el subtítulo no debe viajar a Portada"
+
+    # `?q=` envía el mensaje al instante, sin la imagen.
+    assert "chatgpt.com/?q=" not in pagina
+
+    script = client.get("/estatico/guardar.js").text
+    assert "mejorar-chatgpt" in script
+    assert "clipboard" in script, "la instrucción tiene que quedar copiada"
+    assert "chatgpt.com/?q=" not in script
