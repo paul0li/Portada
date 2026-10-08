@@ -59,6 +59,9 @@ class CreateEpisode(BaseModel):
     # contra el lienzo en vez de rechazarse, como todo lo del título.
     titulo_x: int = 0
     titulo_y: int = 0
+    # `izquierda`, `centro` o `derecha` dentro del bloque. Se valida en el
+    # service, como `degradado`, para que un nombre raro sea el 422 del dominio.
+    titulo_alineacion: str = composition.ALINEACION_POR_DEFECTO
     # rol -> un ajuste por FIGURA, en el orden de sus fotos. Se acepta uno
     # suelto o una lista, igual que `selection`: el caso normal es un rol con
     # una figura, y pedirle una lista de uno sería ceremonia.
@@ -101,6 +104,7 @@ class EpisodeOut(BaseModel):
     titulo_apilado: bool = False
     titulo_x: int = 0
     titulo_y: int = 0
+    titulo_alineacion: str = composition.ALINEACION_POR_DEFECTO
     # Solo los roles ajustados, y con los valores ya acotados: lo que se dibuja.
     # Siempre una lista, aunque entre suelto: a la salida no hay dos formas.
     ajustes: dict[str, list[AjusteIn]] = Field(default_factory=dict)

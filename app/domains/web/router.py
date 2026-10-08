@@ -82,7 +82,11 @@ MENSAJE_GENERICO = "Algo falló y no fue culpa tuya. Inténtalo otra vez."
 
 # El orden en que se muestran los roles es el del flujo semanal, no el
 # alfabético. `logo` y `marco` van al final porque son marca, no contenido.
-ORDEN_ROLES = ("conductor", "invitado", "fondo", "objeto", "logo", "marco")
+#
+# Sin `objeto`: «elimina las secciones de objetos». El rol sigue existiendo en
+# el template y en la API —un episodio viejo que los traiga se arma igual—,
+# pero la pantalla ya no lo ofrece: ni en la librería, ni como paso del flujo.
+ORDEN_ROLES = ("conductor", "invitado", "fondo", "logo", "marco")
 
 ETIQUETAS = {
     "conductor": "Conductor",
@@ -97,14 +101,15 @@ ETIQUETAS = {
 # admite varias —«Invitados», «Objetos»— y «ajustar invitados 2» no se entiende:
 # lo que se ajusta es un invitado, el segundo. Solo hacen falta los que pueden
 # venir de a varios; para el resto vale la etiqueta de siempre.
-FIGURAS = {"invitado": "invitado", "objeto": "objeto"}
+FIGURAS = {"invitado": "invitado"}
 
-# Los cinco pasos del trabajo semanal (SPEC §8, pasos 3-8). El prototipo tenía
+# Los cuatro pasos del trabajo semanal (SPEC §8, pasos 3-8). El prototipo tenía
 # seis porque metía «Logo o marco» dentro; pero SPEC §8 ya cuenta subir el logo
 # como setup —«el trabajo recurrente son los pasos 3-8»— y la marca se pone una
 # vez. El sexto paso del prototipo, «instrucciones personalizadas», no está y no
-# puede estar: es prosa dirigiendo a un compositor, y SPEC §11.3 lo prohíbe.
-PASOS = ("conductor", "invitado", "fondo", "objeto", "titulo")
+# puede estar: es prosa dirigiendo a un compositor, y SPEC §11.3 lo prohíbe. Y
+# los objetos se fueron (ver `ORDEN_ROLES`).
+PASOS = ("conductor", "invitado", "fondo", "titulo")
 
 # La marca: se elige una vez y el flujo la da por puesta. No la rellena el
 # backend —eso haría que subir un marco nuevo cambiara en silencio el checksum
@@ -121,10 +126,17 @@ AYUDAS = {
         f"Quien viene esta semana. Hasta {episodes.MAXIMOS['invitado']}, al centro y detrás de ti."
     ),
     "fondo": "Opcional. Sin foto se usa el degradado del show, claro u oscuro.",
-    "objeto": f"Opcional. Hasta {episodes.MAXIMOS['objeto']}, en la banda central.",
     "logo": "Se pega tal cual, arriba a la izquierda. Nunca se reinterpreta.",
     "marco": "El PNG 16:9 del show. Va encima de todo, incluso del título.",
 }
+
+
+# Los nombres de la alineación en pantalla. Los valores salen del template, que
+# es quien dice cuáles hay; esto solo les pone etiqueta.
+ALINEACIONES_EN_PANTALLA = [
+    (nombre, {"izquierda": "Izquierda", "centro": "Centro", "derecha": "Derecha"}[nombre])
+    for nombre in episodes.ALINEACIONES
+]
 
 
 def _mensaje(error: AppError) -> str:
@@ -193,6 +205,9 @@ def _contexto_modal(request, db, settings, user_id: str, nueva_id: str) -> dict:
     aqui = request.url.path + (f"?{request.url.query}" if request.url.query else "")
     limpia = _sin_parametro(aqui, "nueva")
     return {
+        # Después de borrarla se vuelve a la misma pantalla, sin la foto en el
+        # borrador: un id borrado en la URL sería una figura que ya no existe.
+        "aqui_sin_la_foto": _sin_foto(limpia, photo.id),
         "nueva": _foto(photo, library.resolve_media(db, settings, photo)),
         # No se ofrece lo que esta instancia no puede hacer. Con `passthrough`
         # puesto, el boton llamaria al recorte, el recorte devolveria la misma
@@ -206,6 +221,24 @@ def _contexto_modal(request, db, settings, user_id: str, nueva_id: str) -> dict:
 def _sin_parametro(url: str, nombre: str) -> str:
     ruta, _, consulta = url.partition("?")
     quedan = [p for p in consulta.split("&") if p and not p.startswith(f"{nombre}=")]
+    return f"{ruta}?{'&'.join(quedan)}" if quedan else ruta
+
+
+def _sin_foto(url: str, photo_id: str) -> str:
+    """La URL sin esa foto en el borrador, ni los ajustes de su rol.
+
+    Los ajustes van por POSICIÓN dentro del rol: quitada una foto, el ajuste del
+    segundo invitado le caería al primero. Se reponen todos los de ese rol.
+    """
+    ruta, _, consulta = url.partition("?")
+    pares = [p.partition("=") for p in consulta.split("&") if p]
+    roles = {clave for clave, _, valor in pares if valor == photo_id}
+    quedan = [
+        f"{clave}={valor}"
+        for clave, _, valor in pares
+        if valor != photo_id
+        and not (clave == "ajuste" and valor.split(".")[0].split("%")[0] in roles)
+    ]
     return f"{ruta}?{'&'.join(quedan)}" if quedan else ruta
 
 
@@ -510,6 +543,7 @@ def _url_preview(
     titulo_tamano: int = 0,
     titulo_alto: int = 0,
     titulo_apilado: bool = False,
+    titulo_alineacion: str = episodes.ALINEACION_POR_DEFECTO,
 ) -> str:
     """El `<img src>` del paso. Lleva lo mismo que la página, más el título.
 
@@ -526,6 +560,7 @@ def _url_preview(
             ("titulo_tamano", titulo_tamano),
             ("titulo_alto", titulo_alto),
             ("titulo_apilado", int(titulo_apilado)),
+            ("titulo_alineacion", titulo_alineacion),
             ("title", title),
         ]
     )
@@ -833,6 +868,7 @@ def preview(
     titulo_apilado: int = 0,
     titulo_x: int = 0,
     titulo_y: int = 0,
+    titulo_alineacion: str = "",
 ) -> Response:
     """La miniatura de lo que llevo elegido (SPEC §8.4).
 
@@ -871,6 +907,7 @@ def preview(
             titulo_apilado=bool(titulo_apilado),
             titulo_x=titulo_x,
             titulo_y=titulo_y,
+            titulo_alineacion=_alineacion(titulo_alineacion),
         )
     except AppError:
         # SPEC §11.4 llevado a la UI: el preview es mejora, nunca dependencia.
@@ -927,6 +964,15 @@ def _src_de_la_capa(capa, borrador: Borrador, seleccion, titulo: dict) -> str:
     return _url_capa(nombre, pares)
 
 
+def _alineacion(pedida: str) -> str:
+    """La alineación del título, leída de la URL o del formulario.
+
+    Una que no existe cae en la de siempre en vez de dar un error, como el
+    degradado: lo que llega por la barra de direcciones lo escribe cualquiera.
+    """
+    return pedida if pedida in episodes.ALINEACIONES else episodes.ALINEACION_POR_DEFECTO
+
+
 def _titulo_de(params) -> dict:
     """Los campos del título de una petición del lienzo, como enteros."""
 
@@ -944,6 +990,7 @@ def _titulo_de(params) -> dict:
         "titulo_apilado": _entero("titulo_apilado"),
         "titulo_x": _entero("titulo_x"),
         "titulo_y": _entero("titulo_y"),
+        "titulo_alineacion": _alineacion(params.get("titulo_alineacion", "")),
     }
 
 
@@ -1087,6 +1134,7 @@ def _bloque_del_titulo(titulo: dict, tamano: int | None) -> dict:
             "alto": regla - techo,
         },
         "tamano": tamano,
+        "alineacion": titulo["titulo_alineacion"],
         # Desde dónde cuenta el mando del tamaño: «+16» es 16 sobre ESTE.
         "tamano_base": tipografia.size_max,
         "mandos": {
@@ -1206,6 +1254,8 @@ def flujo(
         "titulo_apilado": False,
         "titulo_x": 0,
         "titulo_y": 0,
+        "titulo_alineacion": episodes.ALINEACION_POR_DEFECTO,
+        "alineaciones": ALINEACIONES_EN_PANTALLA,
         "role": role,
         "etiquetas": ETIQUETAS,
         "ayudas": AYUDAS,
@@ -1239,6 +1289,10 @@ def flujo(
             siguiente[role] = ([*siguiente.get(role, []), photo.id])[-tope:]
         datos["puesta"] = puesta
         datos["toque"] = _url_flujo(paso, borrador.con(seleccion=siguiente))
+        # El otro toque de la tarjeta: abre el modal de la foto, que es donde se
+        # borra. Dos pasos, como en la librería (SPEC §11.11): la grilla elige,
+        # no borra.
+        datos["opciones"] = _con_modal(_url_flujo(paso, borrador), photo.id)
         tarjetas.append(datos)
 
     contexto |= {
@@ -1293,6 +1347,7 @@ def crear(
     # como el resto del título: no vive en la URL.
     titulo_x: Annotated[int, Form()] = 0,
     titulo_y: Annotated[int, Form()] = 0,
+    titulo_alineacion: Annotated[str, Form()] = episodes.ALINEACION_POR_DEFECTO,
     # Los ajustes viajan como texto, uno por figura: `invitado.1:40,-20,1,0,0,120`.
     ajuste: Annotated[list[str], Form()] = [],  # noqa: B006
     # Los roles se declaran uno a uno en vez de leer el formulario entero: en una
@@ -1302,7 +1357,6 @@ def crear(
     conductor: Annotated[list[str], Form()] = [],  # noqa: B006
     invitado: Annotated[list[str], Form()] = [],  # noqa: B006
     fondo: Annotated[list[str], Form()] = [],  # noqa: B006
-    objeto: Annotated[list[str], Form()] = [],  # noqa: B006
 ) -> Response:
     """Crea el episodio y lo arma de una vez.
 
@@ -1319,7 +1373,6 @@ def crear(
             ("conductor", conductor),
             ("invitado", invitado),
             ("fondo", fondo),
-            ("objeto", objeto),
         )
         if any(valores)
     }
@@ -1342,6 +1395,7 @@ def crear(
             titulo_apilado=bool(titulo_apilado),
             titulo_x=titulo_x,
             titulo_y=titulo_y,
+            titulo_alineacion=titulo_alineacion,
         )
         episodes.build_assembly(
             db,
@@ -1376,6 +1430,8 @@ def crear(
                 "titulo_apilado": bool(titulo_apilado),
                 "titulo_x": titulo_x,
                 "titulo_y": titulo_y,
+                "titulo_alineacion": _alineacion(titulo_alineacion),
+                "alineaciones": ALINEACIONES_EN_PANTALLA,
                 "atras": _url_flujo(len(PASOS) - 1, fallido),
                 "lienzo": _url_lienzo(fallido),
                 "campos": fallido.pares(),
@@ -1388,6 +1444,7 @@ def crear(
                     titulo_tamano,
                     titulo_alto,
                     bool(titulo_apilado),
+                    _alineacion(titulo_alineacion),
                 ),
                 "error": _mensaje(error),
             },
@@ -1427,7 +1484,9 @@ def resultado(
             "armado": armado,
             "usadas": usadas,
             "editar": _url_flujo(1, armado_borrador),
-            "preview": _url_preview(armado_borrador, episode.title),
+            "preview": _url_preview(
+                armado_borrador, episode.title, titulo_alineacion=episode.titulo_alineacion
+            ),
             # Se dice cuál fondo se usó, por lo mismo que se dice la marca: una
             # entrada invisible en el checksum del armado sería peor que un dato
             # de más. Solo cuando se ve, que es cuando no hay foto de fondo.
@@ -1470,16 +1529,25 @@ def corregir_titulo(
 
 
 @router.post("/libreria/fotos/{photo_id}/borrar")
-def borrar_foto(request: Request, db: Db, user_id: OptionalUser, photo_id: str) -> Response:
+def borrar_foto(
+    request: Request,
+    db: Db,
+    user_id: OptionalUser,
+    photo_id: str,
+    volver: Annotated[str, Form()] = "",
+) -> Response:
     """SPEC §11.11: borrar son dos pasos. Este es el segundo.
 
-    El primero es entrar al detalle. La grilla no tiene este formulario, así que
-    no hay forma de borrar de un toque desde una pantalla llena de miniaturas.
+    El primero es entrar al detalle o abrir el modal de la foto. La grilla no
+    tiene este formulario, así que no hay forma de borrar de un toque desde una
+    pantalla llena de miniaturas. Desde el modal se vuelve a donde se estaba
+    —el paso del flujo, sin la foto en el borrador—.
     """
     if user_id is None:
         return _a_entrar()
+    destino = _vuelta_segura(volver, "/libreria")
     try:
         library.delete_photo(db, user_id=user_id, photo_id=photo_id)
     except AppError as error:
         return _pagina(request, "vacio.html", {"mensaje": _mensaje(error)}, status=error.status)
-    return RedirectResponse("/libreria", status_code=303)
+    return RedirectResponse(destino, status_code=303)

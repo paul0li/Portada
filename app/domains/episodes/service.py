@@ -84,6 +84,17 @@ def _validate_selection(
     return limpia
 
 
+def _validate_alineacion(alineacion: str) -> str:
+    """La alineacion del titulo, o 422. Abajo un nombre raro cae a la izquierda;
+    la puerta de entrada es donde un nombre invalido SI es un error."""
+    if alineacion not in composition.ALINEACIONES:
+        raise errors.SeleccionInvalida(
+            f"Alineación desconocida: {alineacion!r}.",
+            details={"valid": list(composition.ALINEACIONES)},
+        )
+    return alineacion
+
+
 def _validate_degradado(degradado: str) -> str:
     """El nombre del fondo por defecto, o 422.
 
@@ -182,6 +193,7 @@ def create_episode(
     titulo_apilado: bool = False,
     titulo_x: int = 0,
     titulo_y: int = 0,
+    titulo_alineacion: str = composition.ALINEACION_POR_DEFECTO,
 ) -> repo.Episode:
     if strength not in finishing.STRENGTHS:
         raise errors.SeleccionInvalida(
@@ -189,6 +201,7 @@ def create_episode(
             details={"valid": list(finishing.STRENGTHS)},
         )
     _validate_degradado(degradado)
+    _validate_alineacion(titulo_alineacion)
     limpios = _validate_ajustes(ajustes)
     limpia = _validate_selection(db, user_id=user_id, selection=selection)
     limpios = _solo_las_figuras_elegidas(limpios, limpia)
@@ -209,6 +222,7 @@ def create_episode(
             titulo_apilado=titulo_apilado,
             titulo_x=movido[0],
             titulo_y=movido[1],
+            titulo_alineacion=titulo_alineacion,
             selection=limpia,
             ajustes=limpios,
         )
@@ -270,6 +284,7 @@ def _brief_de(
     titulo_apilado: bool = False,
     titulo_x: int = 0,
     titulo_y: int = 0,
+    titulo_alineacion: str = composition.ALINEACION_POR_DEFECTO,
     referencia: str = "",
 ) -> composition.Brief:
     """Resuelve una seleccion a rutas de archivo.
@@ -304,6 +319,7 @@ def _brief_de(
         titulo_apilado=titulo_apilado,
         titulo_x=titulo_x,
         titulo_y=titulo_y,
+        titulo_alineacion=titulo_alineacion,
     )
 
 
@@ -322,6 +338,7 @@ def _build_brief(db: Database, settings: Settings, episode: repo.Episode) -> com
         titulo_apilado=episode.titulo_apilado,
         titulo_x=episode.titulo_x,
         titulo_y=episode.titulo_y,
+        titulo_alineacion=episode.titulo_alineacion,
         referencia=episode.id,
     )
 
@@ -341,6 +358,7 @@ def _brief_del_borrador(
     titulo_apilado: bool = False,
     titulo_x: int = 0,
     titulo_y: int = 0,
+    titulo_alineacion: str = composition.ALINEACION_POR_DEFECTO,
 ) -> composition.Brief:
     """El brief de una seleccion que todavia no es un episodio.
 
@@ -363,6 +381,7 @@ def _brief_del_borrador(
         titulo_apilado=titulo_apilado,
         titulo_x=titulo_x,
         titulo_y=titulo_y,
+        titulo_alineacion=titulo_alineacion,
     )
 
 

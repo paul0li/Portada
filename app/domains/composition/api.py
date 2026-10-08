@@ -25,6 +25,8 @@ from app.domains.composition.assembly import (
 )
 from app.domains.composition.template import (
     AJUSTES,
+    ALINEACION_POR_DEFECTO,
+    ALINEACIONES,
     DEGRADADO_POR_DEFECTO,
     DEGRADADOS,
     MAX_POR_ROL,
@@ -40,6 +42,8 @@ from app.domains.composition.template import (
 
 __all__ = [
     "AJUSTES",
+    "ALINEACION_POR_DEFECTO",
+    "ALINEACIONES",
     "BASES",
     "TIPOGRAFIA",
     "MAX_POR_ROL",

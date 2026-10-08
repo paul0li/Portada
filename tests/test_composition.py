@@ -1028,7 +1028,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "cbd27100de90a8dc"
+HUELLA_DEL_TEMPLATE = "4266d5710a36af67"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():
@@ -1050,6 +1050,9 @@ def test_composition_14_editar_el_template_obliga_a_subir_la_version():
                 # las demas: quitarle el volteo a un rol cambia los pixeles de
                 # cualquier episodio que lo usara, en silencio.
                 template.ROLES_VOLTEABLES,
+                # Que alineaciones del titulo existen: quitar una cambia los
+                # pixeles de cualquier episodio que la usara (v13).
+                template.ALINEACIONES,
                 # La tipografia no vive en template.py pero decide cada pixel del
                 # titulo: cambiarla sin subir la version deja el canal con dos
                 # fuentes, porque `brief_checksum` incluye la version y el armado
@@ -1226,3 +1229,58 @@ def test_composition_24_repintar_por_titulo_tarda_menos_de_60ms(fotos):
     transcurrido = (time.perf_counter() - empezo) * 1000
 
     assert transcurrido < 60, f"repintar por titulo tardo {transcurrido:.0f} ms"
+
+
+def test_composition_43_el_titulo_se_alinea_dentro_de_su_bloque():
+    """Izquierda, centro y derecha dentro del bloque, con la regla detrás."""
+    tipografia = template.TYPOGRAPHY
+    paleta = template.PALETTE
+    util = tipografia.ancho()
+
+    def _tinta(alineacion=None):
+        lienzo = Image.new("RGBA", template.CANVAS, (0, 0, 0, 0))
+        extra = {} if alineacion is None else {"alineacion": alineacion}
+        typography.draw_title(lienzo, "HOLA", tipografia, paleta, **extra)
+        return lienzo
+
+    def _regla(lienzo):
+        """La caja de la regla de acento: la franja bajo la línea base."""
+        y = tipografia.bottom + tipografia.rule_gap + tipografia.rule_height // 2
+        franja = lienzo.crop((0, y, template.CANVAS[0], y + 1))
+        caja = franja.getbbox()
+        return caja[0], caja[2]
+
+    izquierda = _tinta("izquierda")
+    centro = _tinta("centro")
+    derecha = _tinta("derecha")
+
+    # La de siempre no cambia ni un píxel.
+    assert izquierda.tobytes() == _tinta().tobytes()
+
+    # Lo que se mira es DÓNDE quedó la tinta, no que haya cambiado.
+    medio = tipografia.left + util // 2
+    x0, _, x1, _ = centro.getbbox()
+    assert abs((x0 + x1) / 2 - medio) <= tipografia.stroke_width + 2, "no quedó centrado"
+    assert abs(derecha.getbbox()[2] - (tipografia.left + util)) <= tipografia.stroke_width + 2
+    assert abs(izquierda.getbbox()[0] - tipografia.left) <= tipografia.stroke_width + 2
+
+    # La regla va con el texto.
+    assert _regla(izquierda)[0] == tipografia.left
+    assert abs(sum(_regla(centro)) / 2 - medio) <= 1
+    assert _regla(derecha)[1] == tipografia.left + util + 1
+
+    # El checksum: la de siempre no cambia el de un armado de antes, y las
+    # otras dos sí cambian.
+    base = composition.Brief(title="HOLA")
+    assert composition.brief_checksum(
+        composition.Brief(title="HOLA", titulo_alineacion="izquierda")
+    ) == composition.brief_checksum(base)
+    distintos = {
+        composition.brief_checksum(composition.Brief(title="HOLA", titulo_alineacion=a))
+        for a in template.ALINEACIONES
+    }
+    assert len(distintos) == 3
+    # Es overlay: la base no se entera.
+    assert composition.base_checksum(
+        composition.Brief(title="HOLA", titulo_alineacion="derecha")
+    ) == composition.base_checksum(base)

@@ -39,13 +39,29 @@
   <input type="hidden" id="titulo-tamano" name="titulo_tamano" value="{{ titulo_tamano }}">
   <input type="hidden" id="titulo-alto" name="titulo_alto" value="{{ titulo_alto }}">
 
+  {# Cómo se alinean las líneas dentro del bloque, y la regla con ellas. Son
+     radios y no enlaces porque viajan con el formulario, como el resto del
+     título: navegar se llevaría lo tecleado. Con JS repintan el lienzo. #}
+  <fieldset class="intensidad">
+    <legend class="rotulo">Alinear el texto</legend>
+    <div class="fila">
+      {% for nombre, etiqueta in alineaciones %}
+        <label class="opcion">
+          <input type="radio" name="titulo_alineacion" value="{{ nombre }}"
+                 {% if nombre == titulo_alineacion %}checked{% endif %}>
+          <span>{{ etiqueta }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
   <button class="boton" type="submit">Armar miniatura</button>
 </form>
 
 <div class="tarjeta">
   <p class="rotulo">Se va a usar</p>
   <dl class="resumen">
-    {% for role in ("conductor", "invitado", "fondo", "objeto") %}
+    {% for role in ("conductor", "invitado", "fondo") %}
       <div>
         <dt>{{ etiquetas[role] }}</dt>
         {# Sin foto de fondo el hueco no es un «—»: es el degradado que se va a

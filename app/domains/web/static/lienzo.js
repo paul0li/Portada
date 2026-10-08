@@ -20,6 +20,10 @@
 
   const formulario = document.querySelector('form[action="/nueva"]');
   const campo = (id) => document.getElementById(id);
+  const alineacion = () => {
+    const puesta = document.querySelector('input[name="titulo_alineacion"]:checked');
+    return puesta ? puesta.value : "izquierda";
+  };
   const titulo = {
     texto: campo("titulo"),
     ancho: campo("titulo-ancho"),
@@ -53,6 +57,7 @@
       ["titulo_apilado", titulo.apilado && titulo.apilado.checked ? 1 : 0],
       ["titulo_x", titulo.x ? titulo.x.value : 0],
       ["titulo_y", titulo.y ? titulo.y.value : 0],
+      ["titulo_alineacion", alineacion()],
     ];
   };
 
@@ -720,6 +725,9 @@
   };
   for (const control of [titulo.texto, titulo.ancho, titulo.tamano, titulo.alto, titulo.apilado]) {
     if (control) control.addEventListener("input", alTeclear);
+  }
+  for (const radio of document.querySelectorAll('input[name="titulo_alineacion"]')) {
+    radio.addEventListener("change", alTeclear);
   }
 
   // --- arrancar -------------------------------------------------------------

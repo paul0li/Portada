@@ -474,7 +474,7 @@ def test_web_37_el_fondo_por_defecto_se_elige_en_su_paso(client, imagen):
     oscuro = client.get(enlace.group(1).replace("&amp;", "&"))
     assert oscuro.status_code == 200
     assert ids["conductor"] in oscuro.text, "elegir el fondo se llevo por delante lo elegido"
-    assert "paso=4" in oscuro.text, "elegir el fondo saco del paso en vez de repintarlo"
+    assert "paso=3" in oscuro.text, "elegir el fondo saco del paso en vez de repintarlo"
     # El preview de esa pantalla pide el fondo elegido: es lo que hace que la
     # eleccion se VEA antes de armar.
     assert re.search(r'id="preview" src="[^"]*degradado=oscuro', oscuro.text)
@@ -745,7 +745,7 @@ def test_web_42_pongo_el_titulo_ancho_o_apilado(client, imagen):
 
     _entrar(client)
     ids = _libreria_completa(client, imagen)
-    paso = f"/nueva?paso=5&conductor={ids['conductor']}"
+    paso = f"/nueva?paso=4&conductor={ids['conductor']}"
 
     pagina = client.get(paso)
     assert pagina.status_code == 200
@@ -1346,3 +1346,97 @@ def test_web_49_mejoro_la_miniatura_en_chatgpt(client, imagen):
     assert "mejorar-chatgpt" in script
     assert "clipboard" in script, "la instrucción tiene que quedar copiada"
     assert "chatgpt.com/?q=" not in script
+
+
+def test_web_50_no_hay_objetos_en_ninguna_pantalla(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    for paso in range(1, 5):
+        pagina = client.get("/nueva", params={"paso": paso, "conductor": ids["conductor"]})
+        assert f"PASO {paso}/4" in pagina.text
+        assert "Objetos" not in pagina.text, f"el paso {paso} todavía habla de objetos"
+    titulo = client.get("/nueva", params={"paso": 4, "conductor": ids["conductor"]})
+    assert 'name="title"' in titulo.text, "el cuarto paso ya no es el título"
+
+    libreria = client.get("/libreria").text
+    assert "role=objeto" not in libreria
+    assert '<option value="objeto"' not in libreria
+    assert "Objetos" not in client.get("/").text
+
+    # Un objeto que llegue por el formulario no entra: el flujo ya no lo ofrece.
+    creado = _armar(client, {"conductor": ids["conductor"], "objeto": ids["objeto"]})
+    episode_id = creado.headers["location"].rsplit("/", 1)[1]
+    assert "objeto" not in client.get(f"/episodes/{episode_id}").json()["selection"]
+
+
+def test_web_51_borro_una_foto_sin_salir_del_flujo(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+    invitado = ids["invitado"]
+    paso = (
+        f"/nueva?paso=2&conductor={ids['conductor']}&invitado={invitado}"
+        f"&ajuste=invitado.0%3A40%2C0%2C0%2C0%2C0%2C100&degradado=claro"
+    )
+
+    pagina = client.get(paso)
+    # La grilla elige y abre el modal; no borra (SPEC §11.11).
+    assert f'action="/libreria/fotos/{invitado}/borrar"' not in pagina.text
+    abrir = re.search(rf'class="foto-opciones" href="([^"]*nueva={invitado}[^"]*)"', pagina.text)
+    assert abrir, "la foto del paso no abre su modal"
+
+    modal = client.get(abrir.group(1).replace("&amp;", "&"))
+    assert f'action="/libreria/fotos/{invitado}/borrar"' in modal.text
+    volver = re.search(r'name="volver" value="([^"]*)"', modal.text.split("/borrar")[1])
+    destino = volver.group(1).replace("&amp;", "&")
+
+    borrado = client.post(
+        f"/libreria/fotos/{invitado}/borrar", data={"volver": destino}, follow_redirects=False
+    )
+    assert borrado.status_code == 303
+    vuelta = borrado.headers["location"]
+    assert vuelta.startswith("/nueva?paso=2"), "borrar me sacó del flujo"
+    assert ids["conductor"] in vuelta, "borrar se llevó lo demás del borrador"
+    assert invitado not in vuelta, "la foto borrada sigue en el borrador"
+    assert "ajuste=invitado" not in vuelta, "quedó el ajuste de la foto borrada"
+    assert client.get(f"/photos/{invitado}").status_code == 404
+
+    # Una vuelta externa se ignora, como al subir (WEB-21).
+    otra = ids["fondo"]
+    fuera = client.post(
+        f"/libreria/fotos/{otra}/borrar",
+        data={"volver": "https://otro.sitio/"},
+        follow_redirects=False,
+    )
+    assert fuera.headers["location"] == "/libreria"
+
+
+def test_web_52_alineo_el_titulo(client, imagen):
+    _entrar(client)
+    ids = _libreria_completa(client, imagen)
+
+    pagina = client.get("/nueva", params={"paso": 4, "conductor": ids["conductor"]})
+    for nombre in ("izquierda", "centro", "derecha"):
+        assert re.search(rf'name="titulo_alineacion" value="{nombre}"', pagina.text), nombre
+    assert re.search(r'value="izquierda"\s+checked', pagina.text), "no arranca a la izquierda"
+
+    # El lienzo la recibe y la dice.
+    lienzo = client.get(
+        "/nueva/lienzo.json",
+        params={"conductor": ids["conductor"], "title": "HOLA", "titulo_alineacion": "centro"},
+    ).json()
+    titulo = next(c for c in lienzo["capas"] if c["nombre"] == "titulo")
+    assert titulo["alineacion"] == "centro"
+    assert "titulo_alineacion=centro" in titulo["src"]
+
+    def _png(**extra):
+        creado = _armar(client, {"conductor": ids["conductor"]}, **extra)
+        assert creado.status_code in (302, 303), creado.text[:400]
+        resultado = client.get(creado.headers["location"])
+        enlace = re.search(r'href="(/episodes/[^"]+/assembly/file)"', resultado.text)
+        return client.get(enlace.group(1)).content
+
+    izquierda = _png()
+    assert _png(titulo_alineacion="izquierda") == izquierda
+    assert _png(titulo_alineacion="centro") != izquierda, "centrar no llegó al armado"
+    assert _png(titulo_alineacion="derecha") != izquierda, "a la derecha no llegó al armado"

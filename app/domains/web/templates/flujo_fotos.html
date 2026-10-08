@@ -43,16 +43,22 @@
 
   {% if fotos %}
     {% for foto in fotos %}
-      <a class="foto" href="{{ foto.toque }}"
-         aria-pressed="{{ 'true' if foto.puesta else 'false' }}">
-        <div class="miniatura {{ 'entera' if foto.role in ('logo', 'marco') }}
-                    {{ 'puesta' if foto.puesta }}">
-          <img src="{{ foto.url }}" alt="{{ foto.etiqueta }}" width="{{ foto.ancho }}"
-               height="{{ foto.alto }}" loading="lazy">
-          {% if foto.puesta %}<span class="marca-puesta" aria-hidden="true">✓</span>{% endif %}
-        </div>
-        <span class="pie">{{ foto.etiqueta }}</span>
-      </a>
+      {# Dos toques por tarjeta: la foto elige, y «⋯» abre su modal, que es
+         donde se borra. La grilla no borra (SPEC §11.11). #}
+      <div class="celda">
+        <a class="foto" href="{{ foto.toque }}"
+           aria-pressed="{{ 'true' if foto.puesta else 'false' }}">
+          <div class="miniatura {{ 'entera' if foto.role in ('logo', 'marco') }}
+                      {{ 'puesta' if foto.puesta }}">
+            <img src="{{ foto.url }}" alt="{{ foto.etiqueta }}" width="{{ foto.ancho }}"
+                 height="{{ foto.alto }}" loading="lazy">
+            {% if foto.puesta %}<span class="marca-puesta" aria-hidden="true">✓</span>{% endif %}
+          </div>
+          <span class="pie">{{ foto.etiqueta }}</span>
+        </a>
+        <a class="foto-opciones" href="{{ foto.opciones }}"
+           aria-label="Opciones de {{ foto.etiqueta }}" title="Opciones">⋯</a>
+      </div>
     {% endfor %}
   {% endif %}
 </div>

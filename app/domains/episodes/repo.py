@@ -31,6 +31,8 @@ class Episode:
     # Cuanto se movio el bloque entero del titulo en el lienzo (v11). Overlay.
     titulo_x: int
     titulo_y: int
+    # Como se alinean las lineas dentro del bloque (v13). Overlay.
+    titulo_alineacion: str
     created_at: str
     deleted_at: str | None
     slots: dict[str, list[str]] = field(default_factory=dict)  # rol -> photo_ids
@@ -108,6 +110,7 @@ def insert(
     selection: dict[str, list[str]],
     titulo_x: int = 0,
     titulo_y: int = 0,
+    titulo_alineacion: str = composition.ALINEACION_POR_DEFECTO,
     ajustes: dict[str, list[composition.Ajuste]] | None = None,
 ) -> Episode:
     episode_id = new_id()
@@ -115,8 +118,8 @@ def insert(
     conn.execute(
         "INSERT INTO episodes_jobs "
         "(id, user_id, title, strength, degradado, titulo_ancho, titulo_tamano, "
-        "titulo_alto, titulo_apilado, titulo_x, titulo_y, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "titulo_alto, titulo_apilado, titulo_x, titulo_y, titulo_alineacion, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             episode_id,
             user_id,
@@ -129,6 +132,7 @@ def insert(
             int(titulo_apilado),
             titulo_x,
             titulo_y,
+            titulo_alineacion,
             creado,
         ),
     )
@@ -175,6 +179,7 @@ def insert(
         titulo_apilado=titulo_apilado,
         titulo_x=titulo_x,
         titulo_y=titulo_y,
+        titulo_alineacion=titulo_alineacion,
         created_at=creado,
         deleted_at=None,
         slots=selection,

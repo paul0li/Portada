@@ -2,6 +2,8 @@
 
 from app.domains.composition.api import (
     AJUSTES,
+    ALINEACION_POR_DEFECTO,
+    ALINEACIONES,
     DEGRADADO_POR_DEFECTO,
     DEGRADADOS,
     ROLES_MOVIBLES,
@@ -31,6 +33,8 @@ from app.domains.finishing.api import DEFAULT_STRENGTH, STRENGTHS
 
 __all__ = [
     "AJUSTES",
+    "ALINEACION_POR_DEFECTO",
+    "ALINEACIONES",
     "TIPOGRAFIA",
     "DEFAULT_STRENGTH",
     "DEGRADADOS",
