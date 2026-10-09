@@ -55,6 +55,10 @@ def _estatico(nombre: str) -> str:
 
 TEMPLATES.env.globals["estatico"] = _estatico
 
+# El acento de la interfaz es el de la miniatura, y se lee de donde vive: en
+# `app.css` seria una segunda copia del color del canal (WEB-54).
+TEMPLATES.env.globals["acento"] = "#{:02x}{:02x}{:02x}".format(*episodes.TEMPLATE.palette.accent)
+
 # Ninguna pantalla privada se guarda en ninguna caché: lo que hay dentro es de
 # una sola persona, y el botón «atrás» no debería enseñárselo a la siguiente.
 # Los ARCHIVOS sí se cachean un año, porque son inmutables por contenido: esta
@@ -716,6 +720,7 @@ def inicio(request: Request, db: Db, settings: Config, user_id: OptionalUser) ->
             "recientes": _recientes(db, user_id),
             # Por tailnet no hay sesión: un «Salir» no cerraría nada (WEB-48).
             "puede_salir": settings.acceso == "enlace",
+            "programa": settings.programa.strip(),
         },
     )
 

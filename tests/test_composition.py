@@ -55,7 +55,7 @@ def fotos(tmp_path):
     }
 
 
-def _brief(fotos, title="EL RING", **roles):
+def _brief(fotos, title="EL SHOW", **roles):
     photos = {rol: [fotos[rol]] for rol in roles or ("conductor", "invitado", "logo")}
     return composition.Brief(title=title, photos=photos)
 
@@ -427,7 +427,7 @@ def test_composition_31_el_invitado_puede_ser_mas_de_uno(fotos):
     dos = _abrir(
         composition.compose(
             composition.Brief(
-                title="EL RING",
+                title="EL SHOW",
                 photos={"invitado": [fotos["invitado"], fotos["invitado_b"]]},
             )
         ).final
@@ -791,14 +791,14 @@ def tipo_acento():
 def test_composition_07_cambiar_el_titulo_no_toca_la_base(fotos):
     """Por eso corregir un typo es gratis: no hay nada que regenerar."""
     con_typo = composition.compose(_brief(fotos, title="EL RIGN", conductor=1, logo=1))
-    corregido = composition.compose(_brief(fotos, title="EL RING", conductor=1, logo=1))
+    corregido = composition.compose(_brief(fotos, title="EL SHOW", conductor=1, logo=1))
 
     assert con_typo.base == corregido.base
     assert con_typo.final != corregido.final
 
 
 def test_composition_08_reapply_pega_logo_y_titulo_sobre_una_base(fotos):
-    brief = _brief(fotos, title="EL RING", conductor=1, logo=1)
+    brief = _brief(fotos, title="EL SHOW", conductor=1, logo=1)
     resultado = composition.compose(brief)
 
     rehecho = composition.reapply(resultado.base, brief)
@@ -947,7 +947,7 @@ def test_composition_10_el_titulo_va_en_mayusculas():
 
 
 def test_composition_11_un_titulo_largo_se_achica_no_desborda():
-    corto = typography.layout("EL RING", template.TYPOGRAPHY)
+    corto = typography.layout("EL SHOW", template.TYPOGRAPHY)
     largo = typography.layout(
         "LA VERDAD COMPLETA SOBRE EL CASO QUE NADIE QUISO CONTAR", template.TYPOGRAPHY
     )
@@ -1015,10 +1015,10 @@ def test_composition_20_la_tipografia_viene_del_repo():
 
 
 def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
-    base = _brief(fotos, title="EL RING", conductor=1)
-    igual = _brief(fotos, title="EL RING", conductor=1)
+    base = _brief(fotos, title="EL SHOW", conductor=1)
+    igual = _brief(fotos, title="EL SHOW", conductor=1)
     otro_titulo = _brief(fotos, title="OTRO", conductor=1)
-    otras_fotos = _brief(fotos, title="EL RING", conductor=1, invitado=1)
+    otras_fotos = _brief(fotos, title="EL SHOW", conductor=1, invitado=1)
 
     assert composition.brief_checksum(base) == composition.brief_checksum(igual)
     assert composition.brief_checksum(base) != composition.brief_checksum(otro_titulo)

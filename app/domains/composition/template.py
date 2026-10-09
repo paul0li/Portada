@@ -284,12 +284,6 @@ class Ajustes:
 
 AJUSTES = Ajustes()
 
-# Zona util cuando hay marco: por debajo de esto, la banda con el nombre del
-# show tapa lo que se dibuje. Medido sobre el marco real de "El Club de las 3
-# de la Tarde": borde de 16px y banda inferior desde y=552.
-SAFE_BOTTOM = 552
-
-
 # --- tipografia del titulo -----------------------------------------------
 
 
@@ -307,10 +301,12 @@ class Typography:
     # `alto_menos`/`alto_mas`, y ese rango se autora contra el MARCO, que es el
     # mobiliario que el show usa de verdad.
     top: int = 150
-    # SPEC 6 decia 604. Con marco, la banda con el nombre del show empieza en
-    # y=552 y se comia el titulo entero. 500 deja la regla de acento en 522-531,
-    # con 21px de aire sobre la banda. Alineado abajo: el titulo crece hacia
-    # arriba y la regla queda siempre a la misma altura.
+    # SPEC 6 decia 604. Con marco, la banda con el nombre del show (en el marco
+    # con el que se afino, desde y=552) se comia el titulo entero. 500 deja la
+    # regla de acento en 522-531, con 21px de aire sobre la banda. Alineado
+    # abajo: el titulo crece hacia arriba y la regla queda siempre a la misma
+    # altura. Un marco con la banda en otro sitio se arregla moviendo el titulo
+    # en el lienzo, o cambiando este numero.
     bottom: int = 500
     size_max: int = 104  # el auto-ajuste empieza aqui y baja
     size_min: int = 64  # ...y no baja de aqui: por debajo no se lee en un feed
@@ -553,8 +549,9 @@ class Palette:
 
     title: Color = (255, 255, 255)
     title_stroke: Color = (12, 12, 16)
-    # El rojo exacto del marco del show, muestreado de marco.png. La regla de
-    # acento repite la marca en vez de competir con ella.
+    # El color de la marca, muestreado del marco del canal: la regla de acento
+    # repite la marca en vez de competir con ella. La interfaz lee este mismo
+    # valor (WEB-54), asi que adaptar Portada a otro canal es cambiarlo aqui.
     accent: Color = (233, 40, 39)
     degradados: Mapping[str, Degradado] = DEGRADADOS
     shadow: Color = (0, 0, 0)

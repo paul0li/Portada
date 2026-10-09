@@ -53,6 +53,23 @@ Sin esto, el proveedor por defecto es `passthrough` y la app lo dice en vez de
 ofrecer un botón que no haría nada. Una foto que ya viene como PNG con
 transparencia no lo necesita.
 
+## Tu canal
+
+El código no sabe para qué canal se usa. Lo que es de tu canal va en tres sitios:
+
+- **El logo y el marco** se suben a la librería, como cualquier foto. El marco
+  es un PNG 1280×720 con el centro transparente que va encima de todo.
+- **El nombre del programa** que se lee en el inicio es `PORTADA_PROGRAMA` en el
+  `.env`. Sin él, el inicio dice «Portada».
+- **El color de acento** es `Palette.accent` en `app/domains/composition/template.py`.
+  La interfaz lo lee de ahí. Cambiarlo es cambiar el template: sube
+  `TEMPLATE_VERSION`, y el test de la huella te lo recuerda.
+
+El resto del layout (dónde va el título, las alturas de las figuras) se afinó
+con un marco que tiene la banda del nombre abajo, desde y=552. Si el tuyo es
+distinto, el título y las figuras se mueven en el lienzo de cada episodio, y
+los números por defecto están en el mismo `template.py`.
+
 ## Despliegue
 
 Portada corre **en el Mac** y se abre desde el teléfono por **Tailscale**. No
@@ -117,6 +134,7 @@ cada página y se ven sin reiniciar; ante la duda, reiniciar no cuesta nada.
    PORTADA_PUBLIC_URL=https://<tu-mac>.<tu-tailnet>.ts.net
    PORTADA_ACCESO=tailnet
    PORTADA_ACCESO_COMO=<tu correo>
+   PORTADA_PROGRAMA=<el nombre de tu programa>
    ```
    `PORTADA_ACCESO_COMO` es la cuenta con la que se entra. Si ya existe, se
    conservan su librería y su historial; si no, se crea sola. El nombre del Mac

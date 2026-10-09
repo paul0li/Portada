@@ -18,7 +18,7 @@
   --tinta-suave: rgba(0, 0, 0, 0.4);
   --linea: rgba(0, 0, 0, 0.1);
   --linea-fuerte: rgba(0, 0, 0, 0.16);
-  --acento: #e92827; /* = template.Palette.accent, muestreado del marco */
+  /* --acento lo pone base.html desde template.Palette.accent (WEB-54). */
   --peligro: #d63c1e;
   --sombra: 0 1px 2px rgba(0, 0, 0, 0.04);
   --radio: 12px;

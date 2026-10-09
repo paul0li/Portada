@@ -53,7 +53,7 @@ _RESERVED = frozenset(
 
 
 def mask_email(email: str) -> str:
-    """`paula@ejemplo.cl` -> `p***@ejemplo.cl`."""
+    """`persona@ejemplo.cl` -> `p***@ejemplo.cl`."""
     local, _, domain = email.partition("@")
     if not domain:
         return "***"

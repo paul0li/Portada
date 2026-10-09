@@ -48,7 +48,7 @@ class SessionGrant:
 
 
 def normalize_email(raw: str) -> str:
-    """Minusculas y sin bordes: `  Paula@Ejemplo.CL ` es `paula@ejemplo.cl`.
+    """Minusculas y sin bordes: `  Persona@Ejemplo.CL ` es `persona@ejemplo.cl`.
 
     La parte local de una direccion es sensible a mayusculas segun el RFC, pero
     ningun proveedor real lo aplica. Normalizar evita que la misma persona

@@ -20,6 +20,8 @@ es que está en el cliente y no debería.
 - **WEB-03** — abrir el enlace del correo y pulsar «Entrar» deja la sesión iniciada.
 - **WEB-04** — un enlace vencido o ya usado lo dice en la página y ofrece pedir otro, en vez de mostrar un error crudo.
 - **WEB-48** — con el acceso por tailnet, abrir Portada lleva directo al inicio: `/entrar` redirige y no hay botón «Salir», porque no hay sesión que cerrar.
+- **WEB-53** — el inicio lleva el nombre del programa que dice la configuración (`PORTADA_PROGRAMA`), y sin él dice «Portada»: ningún canal está escrito en el código, así que el repo sirve para cualquiera.
+- **WEB-54** — el acento de la interfaz es el de la miniatura: la página lo lee de `template.Palette.accent`, y la hoja de estilos no lo repite. Un canal cambia su color en un solo sitio.
 
 ## La librería
 

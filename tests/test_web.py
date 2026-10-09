@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 OTRO_EMAIL = "otra@ejemplo.cl"
 
 
-def _pedir_enlace(client, email="paula@ejemplo.cl"):
+def _pedir_enlace(client, email="persona@ejemplo.cl"):
     return client.post("/entrar", data={"email": email})
 
 
@@ -24,7 +24,7 @@ def _enlace(client) -> str:
     return re.search(r"https?://\S+", correo).group(0)
 
 
-def _entrar(client, email="paula@ejemplo.cl"):
+def _entrar(client, email="persona@ejemplo.cl"):
     """El recorrido real: pedir el enlace, abrirlo, pulsar el boton."""
     _pedir_enlace(client, email)
     token = _enlace(client).rsplit("=", 1)[-1]
@@ -1319,6 +1319,27 @@ def test_web_48_por_tailnet_se_entra_directo_al_inicio(tailnet):
     assert entrar.headers["location"] == "/"
 
     assert tailnet.get("/libreria").status_code == 200
+
+
+def test_web_53_el_inicio_lleva_el_nombre_del_programa_configurado(tailnet, tailnet_app):
+    assert "<h1>Portada</h1>" in tailnet.get("/").text, "sin programa, el inicio dice Portada"
+
+    from app.main import create_app
+
+    nombrada = tailnet_app.state.settings.model_copy(update={"programa": "Mi Programa"})
+    with TestClient(create_app(nombrada), client=("100.101.102.103", 50000)) as cliente:
+        assert "<h1>Mi Programa</h1>" in cliente.get("/").text
+
+
+def test_web_54_el_acento_de_la_interfaz_sale_del_template(tailnet):
+    from app.domains.composition import template
+
+    rojo, verde, azul = template.PALETTE.accent
+    acento = f"#{rojo:02x}{verde:02x}{azul:02x}"
+    assert f"--acento: {acento}" in tailnet.get("/").text, "la pagina no lleva el acento"
+
+    hoja = tailnet.get("/estatico/app.css").text
+    assert "--acento:" not in hoja, "el acento esta escrito dos veces"
 
 
 def test_web_49_mejoro_la_miniatura_en_chatgpt(client, imagen):
