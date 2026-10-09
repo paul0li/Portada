@@ -67,6 +67,14 @@ def _abrir(png: bytes) -> Image.Image:
 # --- el armado -----------------------------------------------------------
 
 
+def test_composition_44_la_foto_de_fondo_conserva_sus_colores(fotos):
+    """Con la desaturacion de antes, el verde salia gris: (20, 80, 20) no volvia."""
+    brief = composition.Brief(photos={"fondo": [fotos["fondo"]]})
+    base = _abrir(composition.compose(brief).base)
+    for punto in ((20, 20), (640, 360), (1260, 700)):
+        assert base.getpixel(punto) == (20, 80, 20)
+
+
 def test_composition_01_el_mismo_brief_da_los_mismos_bytes(fotos):
     brief = _brief(fotos, conductor=1, invitado=1, fondo=1, logo=1, objeto=1)
 
@@ -1028,7 +1036,7 @@ def test_composition_13_el_checksum_distingue_lo_que_debe(fotos):
 # Sube este numero A PROPOSITO cuando cambies el template, junto con
 # TEMPLATE_VERSION. El test existe para que cambiar el layout sea una decision
 # consciente y no un efecto secundario.
-HUELLA_DEL_TEMPLATE = "4266d5710a36af67"
+HUELLA_DEL_TEMPLATE = "847a2540fa75e4a0"
 
 
 def test_composition_14_editar_el_template_obliga_a_subir_la_version():
@@ -1039,7 +1047,6 @@ def test_composition_14_editar_el_template_obliga_a_subir_la_version():
                 sorted(template.SLOTS.items()),
                 template.TYPOGRAPHY,
                 template.PALETTE,
-                template.BACKGROUND,
                 template.TITLE_Z,
                 # Cuanto es un empujon y hasta donde llega: son numeros de
                 # layout como los demas, y cambiarlos mueve los pixeles de

@@ -27,7 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+from PIL import Image, ImageFilter
 
 from app.domains.composition import fonts, typography
 from app.domains.composition.template import (
@@ -38,7 +38,6 @@ from app.domains.composition.template import (
     ROLES_MOVIBLES,
     ROLES_VOLTEABLES,
     TEMPLATE,
-    BackgroundTreatment,
     Palette,
     Slot,
     Template,
@@ -297,28 +296,6 @@ def _fit_within(img: Image.Image, max_w: int, max_h: int) -> Image.Image:
     )
 
 
-def _vignette_mask(size: tuple[int, int], strength: float) -> Image.Image:
-    """Mascara radial, construida en pequeno y ampliada.
-
-    Un desenfoque gaussiano de radio ~150px sobre 1280x720 cuesta cientos de
-    milisegundos. Sobre 160x90 cuesta nada, y al ampliar queda igual de suave:
-    una vineta no tiene detalle que perder.
-    """
-    ancho, alto = size
-    chico = (ancho // 8, alto // 8)
-    mask = Image.new("L", chico, 0)
-    margen_x, margen_y = chico[0] * 0.18, chico[1] * 0.18
-    ImageDraw.Draw(mask).ellipse(
-        (margen_x, margen_y, chico[0] - margen_x, chico[1] - margen_y),
-        fill=255,
-    )
-    mask = mask.filter(ImageFilter.GaussianBlur(chico[0] * 0.16))
-    mask = mask.resize(size, Image.BICUBIC)
-    if strength < 1.0:
-        mask = mask.point(lambda v: int(255 - (255 - v) * strength))
-    return mask
-
-
 def _gradient(
     size: tuple[int, int], palette: Palette, nombre: str = DEGRADADO_POR_DEFECTO
 ) -> Image.Image:
@@ -342,19 +319,9 @@ def _gradient(
     return columna.resize(size, Image.BILINEAR).convert("RGBA")
 
 
-def _treat_background(
-    img: Image.Image, treatment: BackgroundTreatment, size: tuple[int, int]
-) -> Image.Image:
-    """Desatura, oscurece, desenfoca y aplica vineta: el fondo debe quedarse detras."""
-    fondo = _cover_fit(img, size).convert("RGB")
-    fondo = ImageEnhance.Color(fondo).enhance(treatment.saturation)
-    fondo = ImageEnhance.Brightness(fondo).enhance(treatment.brightness)
-    if treatment.blur_radius:
-        fondo = fondo.filter(ImageFilter.GaussianBlur(treatment.blur_radius))
-    if treatment.vignette:
-        negro = Image.new("RGB", size, (0, 0, 0))
-        fondo = Image.composite(fondo, negro, _vignette_mask(size, treatment.vignette))
-    return fondo.convert("RGBA")
+def _fondo_de_foto(img: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """La foto a sangre completa, con sus colores: sin desaturar ni desenfocar (v14)."""
+    return _cover_fit(img, size).convert("RGBA")
 
 
 def _with_shadow(img: Image.Image, palette: Palette) -> Image.Image:
@@ -446,7 +413,7 @@ class CacheDeImagenes:
 
     Existe por una sola razon: dibujar la base cuesta ~215 ms y repintar el
     overlay cuesta ~21 ms. Sin esto, escribir el titulo con el preview delante
-    recompondria el fondo, los recortes y la vineta en cada tecla. Y desde v11
+    recompondria el fondo y los recortes en cada tecla. Y desde v11
     hay una segunda: el lienzo pide las figuras de una en una, y recortar y
     escalar una foto real es la parte cara de cada una.
 
@@ -556,9 +523,7 @@ def _capa_fondo(brief: Brief, template: Template) -> Capa:
     clave += f":v{template.version}"
     imagen = FONDOS.obtener(
         clave,
-        lambda: _treat_background(
-            _voltear(_open(fondos[0]), ajuste), template.background, template.canvas
-        ),
+        lambda: _fondo_de_foto(_voltear(_open(fondos[0]), ajuste), template.canvas),
     )
     return Capa("fondo", imagen, 0, 0, ajuste=ajuste)
 
@@ -760,7 +725,7 @@ def compose(brief: Brief, template: Template = TEMPLATE) -> Composition:
     lo que hace que SPEC 7 paso 3 -- "corregir una errata no cuesta una
     regeneracion" -- sea cierto tambien para el armado final, y no solo para el
     preview. Sin esto, cambiar una letra del titulo recomponia el fondo, los
-    recortes y la vineta: ~215 ms para volver a dibujar exactamente lo mismo.
+    recortes: ~215 ms para volver a dibujar exactamente lo mismo.
 
     Sigue siendo determinista: la cache guarda la MISMA imagen que dibujaria
     `_draw_base`, y `obtener` devuelve una copia, asi que nadie puede
