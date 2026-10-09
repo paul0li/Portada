@@ -14,7 +14,12 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Literal
 
-TEMPLATE_VERSION = 13
+TEMPLATE_VERSION = 14
+# v14 (2026-10-09): una foto de fondo se ve con sus colores. "Que los fondos que
+#   el usuario sube no se muestren con un filtro (ahora se ven deslavados)".
+#   Fuera la desaturacion (0.35) y el desenfoque (2 px) que quedaban de v12, y
+#   con ellos el tratamiento entero. Sin foto de fondo -- el degradado -- no
+#   cambia ni un pixel.
 # v13 (2026-10-08): el titulo se puede alinear a la izquierda, al centro o a la
 #   derecha de su bloque, y la regla de acento va con el. "Permite elegir centrar
 #   el texto o alinear a la izquierda o a la derecha." A la izquierda, que es
@@ -569,29 +574,6 @@ class Palette:
 PALETTE = Palette()
 
 
-# --- tratamiento del fondo (SPEC 6: "debe quedarse detras") ---------------
-
-
-@dataclass(frozen=True, slots=True)
-class BackgroundTreatment:
-    """Desaturar + oscurecer + vineta se COMPONEN.
-
-    Los primeros valores (0.55 y 0.75) dejaban negro cualquier fondo de estudio,
-    que ya es oscuro de entrada: tres efectos suaves se multiplican en uno
-    brutal. Estos numeros salen de mirar el PNG, no de razonarlo.
-    """
-
-    saturation: float = 0.35  # desaturar
-    # Sin oscurecer ni vineta desde v12: "elimina la capa de oscuridad". Eran
-    # 0.72 y 0.55, y sobre un fondo de estudio dejaban la foto casi negra.
-    brightness: float = 1.0  # 1 = sin oscurecer
-    blur_radius: float = 2.0
-    vignette: float = 0.0  # 0 = sin vineta, 1 = bordes negros
-
-
-BACKGROUND = BackgroundTreatment()
-
-
 @dataclass(frozen=True, slots=True)
 class Template:
     version: int = TEMPLATE_VERSION
@@ -599,7 +581,6 @@ class Template:
     slots: dict[str, Slot] = field(default_factory=lambda: dict(SLOTS))
     typography: Typography = TYPOGRAPHY
     palette: Palette = PALETTE
-    background: BackgroundTreatment = BACKGROUND
     title_z: int = TITLE_Z
     ajustes: Ajustes = AJUSTES
 

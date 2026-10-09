@@ -105,7 +105,7 @@ picture goes in the conductor slot* — nothing more is inferred.
 
 | Role        | Min | Slot                                     | z | Treatment                                             |
 | ----------- | --- | ---------------------------------------- | - | ----------------------------------------------------- |
-| `fondo`     | 0   | Full bleed 1280×720, cover-fit           | 0 | Desaturate, darken, vignette — it must sit *behind*    |
+| `fondo`     | 0   | Full bleed 1280×720, cover-fit           | 0 | Shown as uploaded: no filter (v14)                     |
 | `objeto`    | 0   | Centre band, max 2, ≤220px tall          | 1 | Cutout, drop shadow                                    |
 | `invitado`  | 1   | Bottom centre band, max 2, ~600px tall   | 2 | Cutout, bleeds off the bottom edge                     |
 | `conductor` | 1   | Bottom right, centred at x≈1040, ~680px  | 3 | Cutout, bleeds off the bottom edge, in front           |
