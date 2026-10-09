@@ -19,7 +19,7 @@ The name is the Spanish word for the cover of a publication.
 ## 2. Who it's for
 
 Podcast creators who publish weekly and make their own thumbnails. The prototype is written for one
-concrete show — *El Ring Podcast* — in Spanish. Single operator, working on a phone, probably the
+concrete show, in Spanish. Single operator, working on a phone, probably the
 same person who hosts.
 
 ## 3. The problem

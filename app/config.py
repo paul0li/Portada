@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     acceso: Literal["enlace", "tailnet"] = "enlace"
     acceso_como: str = ""
 
+    # El nombre que lleva el inicio. Es de la instalacion y no del codigo: el
+    # repo no sabe para que canal se usa (WEB-53). Vacio, dice "Portada".
+    programa: str = ""
+
     magic_link_ttl_minutes: int = 15
     session_ttl_days: int = 30
     magic_links_per_email: int = 3

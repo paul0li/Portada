@@ -49,7 +49,7 @@ def test_finishing_03_el_acabado_recibe_la_base_sin_logo_ni_titulo(logged_in, im
         "/photos", data={"role": "conductor"}, files={"file": ("c.png", imagen(), "image/png")}
     ).json()["id"]
     episode = logged_in.post(
-        "/episodes", json={"title": "EL RING", "selection": {"conductor": conductor}}
+        "/episodes", json={"title": "EL SHOW", "selection": {"conductor": conductor}}
     ).json()
 
     user_id = logged_in.get("/auth/me").json()["id"]

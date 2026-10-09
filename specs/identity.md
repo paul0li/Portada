@@ -7,7 +7,7 @@ los demás solo ven un `UserId`.
 
 - **IDENTITY-01** — pedir un magic link para un email nuevo crea el usuario y responde 202.
 - **IDENTITY-02** — pedir un magic link para un email que ya existe responde exactamente igual: la respuesta no revela si la cuenta existe.
-- **IDENTITY-03** — el email se normaliza (minúsculas, sin espacios al borde): `  Paula@Ejemplo.CL ` y `paula@ejemplo.cl` son el mismo usuario.
+- **IDENTITY-03** — el email se normaliza (minúsculas, sin espacios al borde): `  Persona@Ejemplo.CL ` y `persona@ejemplo.cl` son el mismo usuario.
 - **IDENTITY-04** — un email con formato inválido devuelve 422 sin crear usuario ni enviar correo.
 - **IDENTITY-05** — el correo enviado contiene un enlace a `public_url` con el token.
 - **IDENTITY-06** — el token no se guarda en claro: en la base solo existe su hash.

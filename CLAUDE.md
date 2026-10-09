@@ -9,7 +9,7 @@ razón de ser están en `SPEC.md`; este archivo es **cómo se construye**.
 El preview de cada paso es un lienzo: se toca una figura, se arrastra, se escala
 desde su asa o pellizcando, se voltea y se cambia de capa, y al soltar lo que se
 ve es lo que se descarga. Libre dentro del lienzo: lo único que se acota es que
-el centro de una figura no salga del cuadro. **247 tests.**
+el centro de una figura no salga del cuadro. **249 tests.**
 
 Además (2026-10-08): el flujo son **cuatro** pasos —se quitaron los objetos—,
 una foto ya subida se borra desde el propio paso (su «⋯» abre el modal, y el
@@ -87,8 +87,6 @@ token y lo postean; ninguno abre el enlace, que es lo único que hace una person
 
 </details>
 
-El plan completo está en `/Users/paul0li/.claude/plans/glistening-stargazing-ritchie.md`.
-
 <details><summary>Fase 0 — el marco entra por la API</summary>
 
 La grilla de la fase 6 se armó pasando el marco como ruta local a
@@ -100,7 +98,7 @@ alterar un `CHECK`) y `marco` pasa a ser el sexto rol de la librería.
 
 <details><summary>Fase 6 — la grilla del canal pasa (SPEC §15.3)</summary>
 
-Seis miniaturas de «El Club de las 3 de la Tarde» con fotos reales leen como un
+Seis miniaturas de un programa real, con sus fotos, leen como un
 mismo canal, también a 320 px (el tamaño al que se ven de verdad en un feed).
 
 El template es **v2** y salió de mirar PNGs, no de leer el SPEC:
@@ -118,7 +116,7 @@ La tipografía ya vive en el repo (**Anton**, SIL OFL): el armado es determinist
 entre máquinas, no solo dentro de la tuya. Lo verifica `COMPOSITION-20`, y el CI
 corre en Ubuntu justo para que eso signifique algo.
 
-**Pendiente:** una foto de Su de torso (la actual es busto).
+**Pendiente:** una foto de torso de uno de los invitados (la actual es busto).
 
 </details>
 
@@ -276,6 +274,7 @@ make migrate   # aplica migraciones sin levantar el servidor
 | 2026-08-31 | **El historial es una lista de una columna, no una rejilla de dos** | A 430 px, dos miniaturas 16:9 por línea son 96 px de ancho, y a ese tamaño no se reconoce cuál es cuál — que es lo único que un historial tiene que hacer | Una pantalla ancha de verdad, no un teléfono |
 | 2026-10-07 | **Sin login: se entra por la red de Tailscale** (`PORTADA_ACCESO=tailnet`) | «Quita lo del magic link y solo deja que se pueda entrar». `tailscale serve` ya es una puerta: solo llegan los dispositivos del tailnet, con HTTPS de verdad. Se entra como `PORTADA_ACCESO_COMO`, que se crea solo si no existe. La puerta de la app pasa a ser la IP del socket (100.64.0.0/10 o el propio equipo), nunca `X-Forwarded-For`, y uvicorn escucha en `127.0.0.1`: sin las dos cosas, cualquiera en el mismo wifi entraría como el dueño. El magic link sigue siendo el default y el que prueban los tests | Que entre alguien que no sea uno mismo y necesite su propia librería. Entonces: identificar por la cabecera `Tailscale-User-Login` en vez de un usuario fijo |
 | 2026-10-07 | **«Mejorar en ChatGPT»: la pasada de IA, por fuera** | «Lo más importante de esta app es que una vez armado el lienzo se la pasas a una IA para que la mejore». Es lo que ya funcionaba a mano en ChatGPT, así que el botón lo acorta en vez de reemplazarlo: el PNG final va por la hoja de compartir —solo la imagen: con texto al lado, iOS no ofrecía ChatGPT— y la instrucción queda copiada para pegarla. No usa `chatgpt.com/?q=`: envía el mensaje al instante y sin la imagen. Choca con SPEC §11.5/§11.6 —el modelo ve el logo y el título y puede rehacerlos—, pero ocurre fuera de Portada: lo que Portada guarda sigue siendo el armado | Que la pasada entre por la API (`finishing`). Entonces sí rige §7②: el modelo recibe la `base`, y un subtítulo sería un campo tipografiado del overlay |
+| 2026-10-09 | **El repo no sabe de qué canal es** | «Quiero que sea agnóstico a cualquier canal de YouTube», para poder publicarlo. El nombre del programa pasa a `PORTADA_PROGRAMA` (WEB-53): es de la instalación, no del código. El acento de la interfaz se lee de `template.Palette.accent` (WEB-54) en vez de repetirse en `app.css`, así que un canal cambia su color en un solo sitio. Los números del layout se quedan en `template.py` —es el único sitio donde vive el layout— con sus valores de siempre: ninguna miniatura cambia ni un píxel. Fuera también el nombre del show y los datos personales de docs y tests, y `SAFE_BOTTOM`, que nadie usaba | Que haya que servir a varios canales desde una misma instalación. Entonces la paleta deja de ser del template y pasa a la librería, como el marco |
 | 2026-10-08 | **Fuera los objetos de la pantalla, no del template** | «Elimina las secciones de objetos». Se van de `PASOS`, de `ORDEN_ROLES` (librería, inicio, resumen) y del formulario de `/nueva`. El rol sigue en `template.py`, en `library` y en la API: un episodio viejo con objetos se arma igual, y quitar el slot habría cambiado el template para nada | Que vuelvan: es devolver `objeto` a las dos tuplas de `web` |
 | 2026-10-08 | **Borrar desde el flujo pasa por el modal de la foto** | «Que se pueda eliminar una imagen que ya se subió». La grilla del paso sigue sin borrar (SPEC §11.11): cada foto lleva un «⋯» que abre el modal de siempre, y ahí está «Eliminar». Se vuelve al mismo paso sin la foto en la URL y sin los ajustes de su rol, porque los ajustes van por posición y le caerían a la siguiente | Nada |
 | 2026-10-08 | **Alinear es dentro del bloque, no en el lienzo** (template v13) | «Centrar el texto o alinear a la izquierda o a la derecha». El bloque no se mueve por alinear: las asas siguen significando lo mismo, y centrar en la miniatura es mover el bloque, que ya se hace. La regla de acento va con el texto. A la izquierda no cambia ni un píxel ni el checksum de un armado viejo: la alineación solo entra en el checksum si no es la de siempre | Que el título deje de ser un bloque con borde izquierdo: entonces el ancho se estira desde el centro |

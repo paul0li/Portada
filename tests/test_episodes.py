@@ -161,7 +161,7 @@ def test_episodes_08_cambiar_el_titulo_produce_un_armado_nuevo(logged_in, imagen
     episode_id = _crear(logged_in, {"conductor": conductor}, title="EL RIGN").json()["id"]
     primero = logged_in.post(f"/episodes/{episode_id}/assembly").json()
 
-    logged_in.patch(f"/episodes/{episode_id}", json={"title": "EL RING"})
+    logged_in.patch(f"/episodes/{episode_id}", json={"title": "EL SHOW"})
     segundo = logged_in.post(f"/episodes/{episode_id}/assembly").json()
 
     assert primero["id"] != segundo["id"]

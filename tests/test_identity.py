@@ -10,7 +10,7 @@ import re
 import pytest
 
 COOKIE = "portada_session"
-EMAIL = "paula@ejemplo.cl"
+EMAIL = "persona@ejemplo.cl"
 
 
 def _link(mailer) -> str:
@@ -54,7 +54,7 @@ def test_identity_02_la_respuesta_no_revela_si_la_cuenta_existe(client, mailer):
     assert primera.json() == segunda.json()
 
 
-@pytest.mark.parametrize("escrito", ["  Paula@Ejemplo.CL ", "PAULA@ejemplo.cl", EMAIL])
+@pytest.mark.parametrize("escrito", ["  Persona@Ejemplo.CL ", "PERSONA@ejemplo.cl", EMAIL])
 def test_identity_03_el_email_se_normaliza(client, db, escrito):
     assert _pedir(client, escrito).status_code == 202
     with db.connection() as conn:

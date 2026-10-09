@@ -92,9 +92,9 @@ def test_library_02_un_rol_inventado_se_rechaza(logged_in, imagen):
 
 
 def test_library_03_se_guardan_label_y_descripcion(logged_in, imagen):
-    respuesta = _subir(logged_in, imagen, label="Paula sonriendo", description="gesto de sorpresa")
+    respuesta = _subir(logged_in, imagen, label="Ana sonriendo", description="gesto de sorpresa")
     cuerpo = respuesta.json()
-    assert cuerpo["label"] == "Paula sonriendo"
+    assert cuerpo["label"] == "Ana sonriendo"
     assert cuerpo["description"] == "gesto de sorpresa"
 
 
@@ -283,7 +283,7 @@ def test_library_17_las_fotos_viejas_sobreviven_a_la_reconstruccion(settings, im
         conn.execute(
             "INSERT INTO library_photos "
             "(id, user_id, media_id, role, label, description, created_at, deleted_at) "
-            "VALUES ('foto-vieja', 'u1', 'm1', 'conductor', 'Paula', 'sonriendo',"
+            "VALUES ('foto-vieja', 'u1', 'm1', 'conductor', 'Conductora', 'sonriendo',"
             " '2026-08-01T00:00:00Z', NULL)"
         )
         conn.commit()
@@ -293,7 +293,7 @@ def test_library_17_las_fotos_viejas_sobreviven_a_la_reconstruccion(settings, im
     with db.connection() as conn:
         fila = conn.execute("SELECT * FROM library_photos WHERE id = 'foto-vieja'").fetchone()
         assert fila is not None, "la reconstruccion se llevo por delante las filas"
-        assert (fila["label"], fila["description"]) == ("Paula", "sonriendo")
+        assert (fila["label"], fila["description"]) == ("Conductora", "sonriendo")
         # Y el rol nuevo ya cabe donde antes el CHECK lo rechazaba.
         conn.execute(
             "INSERT INTO library_photos "

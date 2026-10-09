@@ -4,8 +4,12 @@
 {% block cabecera %}
 <header class="cabecera">
   <div>
+    {% if programa %}
     <p class="rotulo">Programa</p>
-    <h1>El Club de las 3 de la Tarde</h1>
+    <h1>{{ programa }}</h1>
+    {% else %}
+    <h1>Portada</h1>
+    {% endif %}
   </div>
   {% if puede_salir %}
   <form method="post" action="/salir">

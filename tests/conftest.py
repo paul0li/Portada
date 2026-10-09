@@ -113,7 +113,7 @@ def logged_in(client) -> TestClient:
     """
     import re
 
-    client.post("/auth/magic-link", json={"email": "paula@ejemplo.cl"})
+    client.post("/auth/magic-link", json={"email": "persona@ejemplo.cl"})
     correo = client.app.state.mailer.sent[-1].text
     token = re.search(r"https?://\S+", correo).group(0).rsplit("=", 1)[-1]
     respuesta = client.post("/auth/verify", json={"token": token})
