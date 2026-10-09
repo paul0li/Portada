@@ -14,7 +14,11 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Literal
 
-TEMPLATE_VERSION = 12
+TEMPLATE_VERSION = 13
+# v13 (2026-10-08): el titulo se puede alinear a la izquierda, al centro o a la
+#   derecha de su bloque, y la regla de acento va con el. "Permite elegir centrar
+#   el texto o alinear a la izquierda o a la derecha." A la izquierda, que es
+#   el default, no cambia ni un pixel.
 # v12 (2026-10-07): una foto de fondo ya no se oscurece ni lleva vineta. "Elimina
 #   la capa de oscuridad que se le pone a las imagenes cuando elijo ponerlas como
 #   fondo." El tratamiento existia para que el fondo "se quedara detras" (SPEC
@@ -492,6 +496,15 @@ class Typography:
 
 
 TYPOGRAPHY = Typography()
+
+# Como se alinean las lineas del titulo DENTRO de su bloque (v13), y la regla de
+# acento con ellas. El bloque no se mueve por alinear: sigue empezando en `left`
+# y midiendo `ancho`, asi que las asas del lienzo significan lo mismo con
+# cualquier alineacion. Centrar en la miniatura es centrar el bloque, y eso ya
+# se hace moviendolo. El primero es el de siempre: un episodio que no dice nada
+# sale como salia.
+ALINEACIONES = ("izquierda", "centro", "derecha")
+ALINEACION_POR_DEFECTO = ALINEACIONES[0]
 
 
 # --- paleta --------------------------------------------------------------

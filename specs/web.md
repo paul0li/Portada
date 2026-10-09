@@ -28,15 +28,18 @@ es que está en el cliente y no debería.
 - **WEB-07** — la librería de otra persona no se ve nunca.
 - **WEB-08** — un archivo que no es una imagen da un error legible en la página, nunca un traceback ni un JSON crudo.
 - **WEB-09** — borrar una foto son dos pasos: la grilla no borra, el detalle sí (SPEC §11.11).
+- **WEB-51** — puedo borrar una foto ya subida sin salir del flujo: cada foto del paso abre su modal, el modal la borra, y vuelvo al mismo paso sin ella en el borrador ni los ajustes de su rol. Sigue siendo en dos pasos: la grilla elige, no borra.
 - **WEB-12** — «Salir» cierra la sesión y deja al navegador en la pantalla de entrar, no en la misma página.
 
 ## La miniatura
 
-El flujo semanal de SPEC §8, pasos 3–8. Son **cinco** pasos y no los seis del
-prototipo: subir el logo y el marco es *setup*, y SPEC §8 ya lo cuenta como tal
+El flujo semanal de SPEC §8, pasos 3–8. Son **cuatro** pasos y no los seis del
+prototipo —los objetos se quitaron (WEB-50)—: subir el logo y el marco es *setup*, y SPEC §8 ya lo cuenta como tal
 («el trabajo recurrente son los pasos 3–8»). La marca se pone una vez y el flujo
 la da por puesta.
 
+- **WEB-50** — no hay objetos en ninguna pantalla: el flujo son cuatro pasos (conductor, invitado, fondo, título), y ni la librería ni el resumen los ofrecen. El rol sigue existiendo en la API: un episodio viejo con objetos se arma igual.
+- **WEB-52** — en el paso del título elijo alinear el texto a la izquierda, al centro o a la derecha. Viaja con el formulario como el resto del título, el lienzo lo repinta, y llega al armado.
 - **WEB-13** — recorro el flujo de punta a punta y al final tengo un PNG 1280×720 que puedo descargar.
 - **WEB-14** — un paso opcional se omite y el armado sale igual: la ausencia es una entrada válida (SPEC §11.8).
 - **WEB-15** — sin conductor no se puede avanzar, y la pantalla dice por qué en vez de fallar al final.

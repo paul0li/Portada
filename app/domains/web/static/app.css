@@ -465,6 +465,29 @@ a:focus-visible,
   border-color: var(--acento);
 }
 
+/* Una tarjeta del flujo con dos toques: la foto elige, «⋯» abre su modal (que
+   es donde se borra). Arriba a la derecha, lejos del ✓ de la izquierda. */
+.celda {
+  position: relative;
+}
+
+.foto-opciones {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .marca-puesta {
   position: absolute;
   top: 7px;
@@ -527,6 +550,18 @@ a:focus-visible,
 
 .opcion input {
   accent-color: var(--acento);
+}
+
+/* Un radio dentro de una `.opcion` es una etiqueta: el botón entero es el
+   objetivo de toque y el círculo sobra, porque «puesto» ya lo dice el borde. */
+label.opcion {
+  display: flex;
+}
+
+label.opcion input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Las dos opciones de fondo son enlaces y no radios: el borrador del flujo vive

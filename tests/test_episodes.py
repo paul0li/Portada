@@ -588,3 +588,24 @@ def test_episodes_18_el_episodio_recuerda_los_ajustes(logged_in, imagen):
     ajeno = _crear(logged_in, fotos, ajustes={"marco": {"dx": 40}})
     assert ajeno.status_code == 422, "dejo mover un rol que no se mueve"
     assert ajeno.json()["error"]["code"] == "EPISODES_SELECTION_INVALID"
+
+
+def test_episodes_24_el_episodio_recuerda_la_alineacion_del_titulo(logged_in, imagen):
+    conductor = _foto(logged_in, imagen, "conductor")
+    seleccion = {"conductor": conductor}
+
+    def _png(respuesta):
+        episode_id = respuesta.json()["id"]
+        assert logged_in.post(f"/episodes/{episode_id}/assembly").status_code == 201
+        return logged_in.get(f"/episodes/{episode_id}/assembly/file").content
+
+    normal = _crear(logged_in, seleccion)
+    centro = _crear(logged_in, seleccion, titulo_alineacion="centro")
+    assert normal.json()["titulo_alineacion"] == "izquierda"
+    assert centro.json()["titulo_alineacion"] == "centro"
+    episode_id = centro.json()["id"]
+    assert logged_in.get(f"/episodes/{episode_id}").json()["titulo_alineacion"] == "centro"
+    assert _png(centro) != _png(normal), "la alineación no llegó a la miniatura"
+
+    rara = _crear(logged_in, seleccion, titulo_alineacion="justificada")
+    assert rara.status_code == 422

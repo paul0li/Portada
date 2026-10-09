@@ -51,6 +51,7 @@ def _out(db, episode: repo.Episode) -> EpisodeOut:
         titulo_apilado=episode.titulo_apilado,
         titulo_x=episode.titulo_x,
         titulo_y=episode.titulo_y,
+        titulo_alineacion=episode.titulo_alineacion,
         ajustes={
             role: [
                 AjusteIn(
@@ -87,6 +88,7 @@ def create_episode(body: CreateEpisode, db: Db, user_id: CurrentUser) -> Episode
         titulo_apilado=body.titulo_apilado,
         titulo_x=body.titulo_x,
         titulo_y=body.titulo_y,
+        titulo_alineacion=body.titulo_alineacion,
     )
     return _out(db, episode)
 

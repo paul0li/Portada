@@ -64,7 +64,7 @@ iPhone (app Tailscale) ──HTTPS──▶ tailscale serve ──▶ uvicorn 12
 ```
 
 - **`tailscale serve`** pone HTTPS con un certificado real en
-  `https://<tu-mac>.<tu-tailnet>.ts.net` (hoy: `https://macbook-pro-2.taile1b659.ts.net`)
+  `https://<tu-mac>.<tu-tailnet>.ts.net`
   y solo lo ven los dispositivos de tu red de Tailscale. HTTPS no es un lujo
   aquí: sin él Safari no ofrece la hoja de compartir, y «Guardar en Fotos» y
   «Mejorar en ChatGPT» no funcionan.
@@ -138,9 +138,9 @@ Primero, `make estado`. Dice cuál de las tres piezas falta:
 
 ```
 servidor   arriba                               ← uvicorn responde
-tailscale  100.x.x.x  macbook-pro-2  …  macOS   ← Tailscale conectado
+tailscale  100.x.x.x  <tu-mac>  …  macOS   ← Tailscale conectado
 serve
-  https://macbook-pro-2.….ts.net (tailnet only)
+  https://<tu-mac>.….ts.net (tailnet only)
   |-- / proxy http://127.0.0.1:8000             ← el serve apunta al servidor
 ```
 

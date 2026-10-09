@@ -81,6 +81,7 @@ template autora el rango y el paso; el episodio elige dentro.
 - **COMPOSITION-11** — un título largo se achica en vez de desbordarse, y nunca baja del mínimo legible.
 - **COMPOSITION-12** — el corte de línea nunca parte una palabra.
 - **COMPOSITION-19** — el título nunca se pisa con la regla de acento, sea cual sea la tipografía: el bloque se ancla a la línea base, no a la ascendente, que cada fuente elige a su gusto.
+- **COMPOSITION-43** — el título se puede alinear a la izquierda, al centro o a la derecha de su bloque, y la regla de acento va con él. El bloque no se mueve por alinear. A la izquierda —la de siempre— no cambia ni un píxel ni el checksum de un armado de antes.
 - **COMPOSITION-20** — la tipografía viene del repo, no del sistema: si no, el mismo brief da píxeles distintos en dos máquinas y el armado deja de ser determinista.
 
 ## El preview

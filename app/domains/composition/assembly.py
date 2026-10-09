@@ -31,6 +31,8 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 from app.domains.composition import fonts, typography
 from app.domains.composition.template import (
+    ALINEACION_POR_DEFECTO,
+    ALINEACIONES,
     BASE_ROLES,
     DEGRADADO_POR_DEFECTO,
     ROLES_MOVIBLES,
@@ -120,6 +122,10 @@ class Brief:
     # Tambien overlay: mover el titulo no toca lo de abajo.
     titulo_x: int = 0
     titulo_y: int = 0
+    # Como se alinean las lineas dentro del bloque (v13). Overlay, como todo lo
+    # del titulo. Un nombre que no esta en `ALINEACIONES` se dibuja a la
+    # izquierda: el armado no falla por un mando (SPEC 11.4).
+    titulo_alineacion: str = ALINEACION_POR_DEFECTO
 
     def for_role(self, role: str) -> list[Path]:
         return list(self.photos.get(role, ()))
@@ -635,6 +641,7 @@ def _capa_titulo(brief: Brief, template: Template):
         brief.titulo_apilado,
         brief.titulo_tamano,
         brief.titulo_alto,
+        brief.titulo_alineacion,
     )
     caja = lienzo.getbbox()
     capa = Capa("titulo", lienzo.crop(caja), caja[0], caja[1], tamano=puesto.size) if caja else None
@@ -888,6 +895,10 @@ def brief_checksum(brief: Brief, template: Template = TEMPLATE) -> str:
     # El desplazamiento ya acotado, por lo mismo que el resto: el efecto.
     movido = template.typography.desplazamiento(brief.titulo_x, brief.titulo_y)
     digest.update(f"\nmovido={movido[0]},{movido[1]}".encode())
+    # Solo si no es la de siempre: un episodio de antes de que existiera este
+    # mando conserva su checksum, y con el su armado.
+    if brief.titulo_alineacion in ALINEACIONES[1:]:
+        digest.update(f"\nalineacion={brief.titulo_alineacion}".encode())
     digest.update(f"\ndegradado={brief.degradado}".encode())
     _huella_de_ajustes(digest, brief, template)
     _huella_de_fotos(digest, brief, brief.photos)

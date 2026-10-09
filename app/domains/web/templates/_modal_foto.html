@@ -8,7 +8,7 @@
    Aquí es donde van a caer las próximas acciones sobre una foto. #}
 <div class="modal-fondo">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
-    <p class="rotulo" id="modal-titulo">{{ etiquetas[nueva.role] }} · recién subida</p>
+    <p class="rotulo" id="modal-titulo">{{ etiquetas[nueva.role] }} · {{ nueva.etiqueta }}</p>
 
     <div class="modal-imagen {{ 'entera' if nueva.role in ('logo', 'marco') }}">
       {# `?v=` cambia cuando cambia lo que la URL sirve: sin eso el navegador
@@ -36,5 +36,12 @@
     {% endif %}
 
     <a class="boton secundario" href="{{ aqui_sin_modal }}">Listo</a>
+
+    {# Borrar es el segundo paso: el primero fue abrir este modal (SPEC §11.11).
+       Se vuelve a la misma pantalla, sin la foto en el borrador. #}
+    <form method="post" action="/libreria/fotos/{{ nueva.id }}/borrar">
+      <input type="hidden" name="volver" value="{{ aqui_sin_la_foto }}">
+      <button class="boton peligro" type="submit">Eliminar de la librería</button>
+    </form>
   </div>
 </div>

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from PIL import Image, ImageDraw, ImageFont
 
 from app.domains.composition import fonts
-from app.domains.composition.template import Palette, Typography
+from app.domains.composition.template import ALINEACION_POR_DEFECTO, Palette, Typography
 
 MAX_TITLE_CHARS = 140
 
@@ -255,11 +255,28 @@ def draw_title(
     apilado: bool = False,
     tamano: int = 0,
     alto: int = 0,
+    alineacion: str = ALINEACION_POR_DEFECTO,
 ) -> LaidOutTitle:
-    """Dibuja el titulo y su regla de acento. Modifica `canvas` en el sitio."""
+    """Dibuja el titulo y su regla de acento. Modifica `canvas` en el sitio.
+
+    `alineacion` alinea cada linea dentro del bloque, y la regla con ellas. El
+    bloque es el mismo con cualquier alineacion: `left` y su ancho.
+    """
     puesto = layout(title, typography, ancho, apilado, tamano, alto)
     if not puesto.lines:
         return puesto
+
+    util = typography.ancho(ancho)
+    # La `x` de cada linea y su ancla horizontal (`l`, `m`, `r`): Pillow mide la
+    # linea y la apoya ahi, asi que no hay una segunda medida que se desfase.
+    x, ancla, regla_x = {
+        "centro": (
+            typography.left + util // 2,
+            "m",
+            typography.left + (util - typography.rule_width) // 2,
+        ),
+        "derecha": (typography.left + util, "r", typography.left + util - typography.rule_width),
+    }.get(alineacion, (typography.left, "l", typography.left))
 
     draw = ImageDraw.Draw(canvas)
     font = fonts.load(puesto.size)
@@ -277,22 +294,22 @@ def draw_title(
 
     for line in puesto.lines:
         draw.text(
-            (typography.left, y),
+            (x, y),
             line,
             font=font,
             fill=palette.title,
             stroke_width=typography.stroke_width,
             stroke_fill=palette.title_stroke,
-            anchor="ls",
+            anchor=f"{ancla}s",
         )
         y += puesto.line_height
 
     rule_y = typography.bottom + typography.rule_gap
     draw.rectangle(
         (
-            typography.left,
+            regla_x,
             rule_y,
-            typography.left + typography.rule_width,
+            regla_x + typography.rule_width,
             rule_y + typography.rule_height,
         ),
         fill=palette.accent,
